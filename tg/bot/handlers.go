@@ -1,0 +1,571 @@
+package bot
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"mime/multipart"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var (
+		status string
+		fl     bool = false
+	)
+
+	if userID == conf.ROOT_ID {
+		status = "root"
+		fl = true
+	} else {
+		status = "user"
+	}
+	err := us_db.InsertUser(ctx, userID, status)
+	if err != nil {
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			sendSuccessMessage(bot, chatID, "Вы уже зарегестрированы", "menu")
+			return
+		} else {
+			log.Printf("error when insert user: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error2: попробуйте позже", "")
+			return
+		}
+
+	}
+
+	if fl {
+		sendSuccessMessage(bot, chatID, "Вы root", "menu")
+	}
+
+	result := fmt.Sprintf(
+		"Добро пожаловать в BH_Transcriber!\n\n"+
+			"Ознакомьтесь с документацией и пользовательским соглашением:\n%s\n\n"+
+			"Чтобы продолжить, примите соглашение и подпишитесь на канал проекта:\n%s",
+		conf.REPO_URL,
+		conf.TG_CHANNEL_URL,
+	)
+	sendSuccessMessage(bot, chatID, result, "reg")
+}
+
+func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	accept, _, _, _, _, err := us_db.GetUserData(ctx, userID)
+	if err != nil {
+		log.Printf("error when get users data: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error3: попробуйте снова позже", "")
+		return
+	}
+
+	if !accept {
+		ctxChange, cancelC := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelC()
+
+		err := us_db.UpUserAccept(ctxChange, userID, true)
+		if err != nil {
+			log.Printf("error when up user accept: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error4: попробуйте снова позже", "")
+			return
+		}
+		sendSuccessMessage(bot, chatID, "Соглашение принято", "")
+		return
+	} else {
+		sendSuccessMessage(bot, chatID, "Вы уже приняли пользовательское соглашение", "menu")
+		return
+	}
+
+}
+
+func ChekSub(bot *tgbotapi.BotAPI, userID, chatID int64) {
+	var (
+		text string
+		fl   bool
+	)
+
+	member, err := bot.GetChatMember(
+		tgbotapi.GetChatMemberConfig{
+			ChatID: conf.TG_CHANNEL_ID,
+			UserID: userID,
+		},
+	)
+	if err != nil {
+		log.Printf("error when chek sub: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error5: поробуйте снова позже", "")
+		return
+	} else {
+		switch member.Status {
+		case "creator", "administrator", "member":
+			text = "✅ Ты подписан на канал!"
+			fl = true
+		case "restricted":
+			if member.IsMember {
+				text = "✅ Ты состоишь в канале."
+				fl = true
+			} else {
+				text = "❌ Сначала подпишись на канал, потом проверь подписку."
+				fl = false
+			}
+		default:
+			text = "❌ Сначала подпишись на канал потом проверь подписку."
+			fl = false
+		}
+
+		if fl {
+			sendSuccessMessage(bot, chatID, text, "menu")
+			return
+		} else {
+			sendErrorMessage(bot, chatID, text, "")
+			return
+		}
+	}
+}
+
+func Mark(bot *tgbotapi.BotAPI, userID, chatID int64, num_t, like, dis_like int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := us_db.UpUserData(ctx, userID, num_t, like, dis_like)
+	if err != nil {
+		log.Printf("error when up user data: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error6: попробуйте снова позже", "menu")
+		return
+	}
+
+	sendSuccessMessage(bot, chatID, "Оценка поставлена", "menu")
+}
+
+func Order(bot *tgbotapi.BotAPI, userID, chatID int64, text string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	error_id, err := err_db.InsertError(ctx, userID, text)
+	if err != nil {
+		log.Printf("error when inser error: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error7: попробуйте снова позже", "menu")
+		return
+	}
+
+	otvet := fmt.Sprintf(
+		"Ваше коментарий добавлен и будет рассмотрен.\n"+
+			"ID вашего обращения - %d\n"+
+			"Спасибо за вклад в сообщество.",
+		error_id)
+	sendSuccessMessage(bot, chatID, otvet, "menu")
+}
+
+func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
+	ctxUS, cancelUS := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelUS()
+
+	_, num_t, like, dis_like, reg_time, err := us_db.GetUserData(ctxUS, userID)
+	if err != nil {
+		log.Printf("error when getting user date: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error8: попробуйте снова позже", "menu")
+		return
+	}
+
+	ctxERR, cancelERR := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelERR()
+	var (
+		res_err  strings.Builder
+		dick_err = make(map[int64]string)
+		keys     = make([]int64, 0, len(dick_err))
+	)
+
+	dick_err, err = err_db.GetUserError(ctxERR, userID)
+	if err != nil {
+		log.Printf("error when get user error: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error9: попробуйте снова позже", "menu")
+		return
+	}
+
+	if len(dick_err) != 0 {
+		//сортировка ключей map
+		for k := range dick_err {
+			keys = append(keys, k)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		})
+
+		// формирования сообщения
+		for _, key := range keys {
+			var smail string
+			if dick_err[key] == "resolved" {
+				smail = "✅"
+			} else {
+				smail = "🕓"
+			}
+
+			format := fmt.Sprintf("#%d: %s%s", key, smail, dick_err[key])
+			res_err.WriteString(format)
+			res_err.WriteString("\n")
+		}
+	} else {
+		res_err.WriteString("Обращений пока нет")
+	}
+
+	result := fmt.Sprintf(
+		"📊 Ваша статистика\n\n"+
+			"🆔 ID: %d\n"+
+			"📅 Регистрация: %s\n\n"+
+			"🎧 Количество транскрибаций: %d\n"+
+			"👍 Понравилось: %d\n"+
+			"👎 Не понравилось: %d\n"+
+			"📨 Ваши обращения:\n", userID, reg_time.Format("02.01.2006 15:04:05"), num_t, like, dis_like,
+	) + res_err.String()
+
+	sendSuccessMessage(bot, chatID, result, "menu")
+}
+
+func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
+	var coolList = make([]string, 0)
+
+	parts := strings.Fields(errorStr)
+	if len(parts) == 0 {
+		log.Printf("parts == 0")
+		sendErrorMessage(bot, chatID, "ID не может быть пустым", "menu")
+		return
+	}
+	for _, id := range parts {
+		nID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+		if err != nil {
+			log.Printf("error when convert id: %v", err)
+			sendErrorMessage(
+				bot,
+				chatID,
+				fmt.Sprintf(
+					"ErrorID должно быть целым числом, но сейчас: %s,\nисправте ввод и повторите попытку",
+					id,
+				),
+				"",
+			)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		status, err := err_db.FindError(ctx, nID)
+		cancel()
+		if err != nil {
+			if err == sql.ErrNoRows {
+				log.Printf("there is no error with this id: %d", nID)
+				sendErrorMessage(
+					bot,
+					chatID,
+					fmt.Sprintf(
+						"Ошибки с таким ID: %d не существует,\nисправте ввод и повторите попытку",
+						nID,
+					),
+					"",
+				)
+				continue
+			} else {
+				log.Printf("error when finding id")
+				sendErrorMessage(bot, chatID, "Internal service error12: попробуйте попытку позже", "menu")
+				return
+			}
+		}
+
+		switch status {
+		case "in_progress", "resolved", "no_valid_comment":
+			log.Printf("полученно id уже решённой проблемы")
+			sendErrorMessage(bot, chatID, "Эта проблема была решена", "")
+			continue
+		case "new":
+			ctxRE, cancelRE := context.WithTimeout(context.Background(), 5*time.Second)
+			status_after, err := err_db.ResolveError(ctxRE, nID)
+			cancelRE()
+			if err != nil {
+				if err == sql.ErrNoRows {
+					log.Printf("полученно id уже решённой проблемы")
+					sendErrorMessage(bot, chatID, "Эта проблема была решена", "")
+					continue
+				}
+				log.Printf("error when set resolve status")
+				sendErrorMessage(bot, chatID, "Internal service error13: повторите попытку позже", "menu")
+				return
+			}
+
+			sendSuccessMessage(
+				bot,
+				chatID,
+				fmt.Sprintf(
+					"Ошибка с ID: %d обработанна, статус изменёт на %s",
+					nID,
+					status_after,
+				),
+				"",
+			)
+			coolList = append(coolList, strconv.FormatInt(nID, 10))
+		default:
+			log.Printf("status incorrect")
+			sendErrorMessage(bot, chatID, fmt.Sprintf("Статус не корректный: %s", status), "")
+			continue
+		}
+	}
+
+	if len(coolList) != 0 {
+		var res strings.Builder
+
+		res.WriteString("Исправленный задачи:")
+
+		for i, sID := range coolList {
+			if i > 0 {
+				if i%5 == 0 {
+					res.WriteString("\n")
+				} else {
+					res.WriteString(" ")
+				}
+			}
+			res.WriteString(sID)
+		}
+
+		sendSuccessMessage(
+			bot,
+			chatID,
+			res.String(),
+			"menu",
+		)
+	} else {
+		log.Printf("0 исправленных проблем")
+		sendErrorMessage(bot, chatID, "Ни одна проблема не исправленна", "menu")
+		return
+	}
+}
+
+func GetErrorList(bot *tgbotapi.BotAPI, rootID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errorMap, err := err_db.GetUnresolvedErrors(ctx)
+	if err != nil {
+		log.Printf("error when getting error list: %v", err)
+		sendErrorMessage(bot, rootID, fmt.Sprintf("ОШИБКА: %v", err), "menu")
+		return
+	}
+
+	var (
+		res     strings.Builder
+		userIDs = make([]int64, 0, len(errorMap))
+	)
+
+	if len(errorMap) != 0 {
+		for userID := range errorMap {
+			userIDs = append(userIDs, userID)
+		}
+		sort.Slice(userIDs, func(i, j int) bool {
+			return userIDs[i] < userIDs[j]
+		})
+		res.WriteString("Список всех не обработаный ошибок, обозначенных пользователями\n\n")
+
+		for _, userID := range userIDs {
+			errorIDs := make([]int64, 0, len(errorMap[userID]))
+			for errorID := range errorMap[userID] {
+				errorIDs = append(errorIDs, errorID)
+			}
+			sort.Slice(errorIDs, func(i, j int) bool {
+				return errorIDs[i] < errorIDs[j]
+			})
+
+			res.WriteString(fmt.Sprintf("UserID: %d\n", userID))
+
+			for _, errorID := range errorIDs {
+				comment := errorMap[userID][errorID]
+				res.WriteString(fmt.Sprintf(
+					"ErrID: %d\nComment: %s\n",
+					errorID,
+					comment,
+				))
+			}
+			res.WriteString("\n")
+		}
+	} else {
+		res.WriteString("Обращений пока нет")
+	}
+
+	sendSuccessMessage(bot, rootID, res.String(), "menu_for_error")
+}
+
+type DataFromParser struct {
+	Text        string  `json:"text"`
+	Language    string  `json:"language"`
+	Probability float64 `json:"language_probability"`
+}
+
+func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbotapi.Message) {
+	// TODO:
+	// надо реализовать функцию помощник которая будет доставать аудио дорожку из кружкоф
+	// надо оставить боту возможноть работать не только с голосовыми и кружками но и
+	// с обычными ауди файлами с записями голоса, например песни и т.д.
+	var fileID, fileName string
+
+	switch {
+	case message.Voice != nil:
+		fileID = message.Voice.FileID
+		fileName = "voice.ogg"
+		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
+
+		// отправляем сообщение о начале работ
+		text := "Начали обработку"
+		msg := tgbotapi.NewMessage(chatID, text)
+		sendMsg, sendErr := bot.Send(msg)
+		if sendErr != nil {
+			log.Printf("error sending message: %s, %v", text, sendErr)
+			sendErrorMessage(bot, chatID, "Internal service error14: повторите попытку позже", "menu")
+			return
+		}
+
+		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName)
+		if err != nil {
+			log.Printf("error when dounload or send file: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
+			return
+		} else {
+			if fromTail.Text == fmt.Sprintf("Файл превышает допустимый размер в %sMB", conf.MAX_UPLOAD_SIZE) {
+				sendErrorMessage(bot, chatID, fromTail.Text, "menu")
+				return
+			}
+			data := &DataFromParser{
+				Text: fromTail.Text,
+				//Language: fromTail.Language,
+				//Probability: fromTail.Probability,
+			}
+			if strings.TrimSpace(data.Text) == "" {
+				log.Printf("text == 0 что-то пошло не так на стороне python")
+				sendErrorMessage(bot, chatID, "Internal service error11: попробуйте снова позже", "menu")
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			err := us_db.UpUserData(ctx, userID, 1, 0, 0)
+
+			// удаляем сообщение о начале работ
+			delBot := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
+			_, errDel := bot.Request(delBot)
+			if errDel != nil {
+				log.Printf("error when deleting message: %v", errDel)
+			}
+
+			if err != nil {
+				log.Printf("error when up user data after transcribation: %v", err)
+				sendErrorMessage(bot, chatID, "Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова", "")
+				sendSuccessMessage(bot, chatID, data.Text, "ord")
+				return
+			}
+			sendSuccessMessage(bot, chatID, data.Text, "ord")
+			return
+		}
+	case message.VideoNote != nil:
+		fileID = message.VideoNote.FileID
+		fileName = "circle.mp4"
+		log.Printf("Circle: ID: %s, name: %s", fileID, fileName)
+	// тут будет функция обработчки
+	// сначало вызов функции которая вытащит звуковую дорожку
+	// потом отправка в handlerDounloadSendPy
+	// получение результата
+	case message.Audio != nil:
+		fileID = message.Audio.FileID
+		fileName = "audio.mp4"
+		log.Printf("Audio file: ID: %s, name: %s", fileID, fileName)
+	// тут будет функция обработчки
+	default:
+		log.Printf("wrong file type")
+		sendErrorMessage(bot, chatID, "Wrong file type", "menu")
+		return
+	}
+}
+
+func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string) (*DataFromParser, error) {
+	telegramFile, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+	if err != nil {
+		return nil, fmt.Errorf("error get file:%v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	downloadReq, err := http.NewRequestWithContext(
+		ctx, "GET", telegramFile.Link(bot.Token), nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error when get link on file:%v", err)
+	}
+
+	downloadResp, err := http.DefaultClient.Do(downloadReq)
+	if err != nil {
+		return nil, fmt.Errorf("error when douloading file:%v", err)
+	}
+	defer downloadResp.Body.Close()
+	// проверка, что скачали
+	if downloadResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"Telegram file download returned HTTP %d",
+			downloadResp.StatusCode,
+		)
+	}
+
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+
+	part, err := form.CreateFormFile("file", fileName)
+	if err != nil {
+		return nil, fmt.Errorf("error when creating form: %v", err)
+	}
+	if _, err := io.Copy(part, downloadResp.Body); err != nil {
+		return nil, fmt.Errorf("err copy: %v", err)
+	}
+	if err := form.Close(); err != nil {
+		return nil, fmt.Errorf("error when close form: %v", err)
+	}
+
+	ctxPY, cancelPY := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancelPY()
+
+	req, err := http.NewRequestWithContext(
+		ctxPY, "POST", conf.WHISPER_PORT, &body,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error when sending req: %v", err)
+	}
+	req.Header.Set("Content-Type", form.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error when get resp: %v", err)
+	}
+	defer resp.Body.Close()
+	// получение ответа и отправка в голову
+	var forHead DataFromParser
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == 413 {
+			forHead.Text = fmt.Sprintf("Файл превышает допустимый размер в %sMB", conf.MAX_UPLOAD_SIZE)
+			return &forHead, nil
+		}
+		return nil, fmt.Errorf(
+			"transcriber returned HTTP %d",
+			resp.StatusCode,
+		)
+	} else {
+		log.Printf("transcription was successful")
+		if err := json.NewDecoder(resp.Body).Decode(&forHead); err != nil {
+			return nil, fmt.Errorf("error when decoding resp: %v", err)
+		}
+	}
+	return &forHead, nil
+}

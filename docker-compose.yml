@@ -1,0 +1,75 @@
+services:
+  user_db:
+    image: postgres:15-alpine
+    container_name: tr_users_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-local=scram-sha-256 --auth-host=scram-sha-256"
+    volumes:
+      - postgres_us_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - "CMD-SHELL"
+      - "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost -p 5432"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    
+  tg:
+    build:
+      context: ./tg
+      dockerfile: Dockerfile
+    env_file:
+      - .env  
+    container_name: tr_tg
+    restart: on-failure
+  
+    depends_on:
+      user_db:
+        condition: service_healthy
+    command:
+      - "sh"
+      - "-c"
+      - >
+          until pg_isready -h user_db -p 5432 -U ${POSTGRES_USER};
+          do echo waiting for users postgres; sleep 1; done;
+          /app/transcriber-bin
+
+    healthcheck:
+      test:
+      - "CMD-SHELL"
+      - "curl -f http://localhost:${HEALTH_CHECK_PORT}/health || exit 1"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    
+  whisper:
+    build:
+      context: ./Whisper
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /models/huggingface
+    volumes:
+      - whisper_models:/models/huggingface
+    container_name: tr_whisper
+    restart: on-failure
+  
+    depends_on:
+      tg:
+        condition: service_healthy
+    command:
+      - uvicorn
+      - whisper.main:app
+      - --host
+      - ${WHISPER_HOST}
+      - --port
+      - ${WHISPER_PORT_FOR_DOCKER}
+    
+volumes:
+  postgres_us_data:
+  whisper_models:
