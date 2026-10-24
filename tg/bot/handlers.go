@@ -429,16 +429,15 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			return
 		}
 
-		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName)
+		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName, chatID)
 		if err != nil {
 			log.Printf("error when dounload or send file: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
 			return
+
+		} else if fromTail == nil {
+			return
 		} else {
-			if fromTail.Text == fmt.Sprintf("Файл превышает допустимый размер в %sMB", conf.MAX_UPLOAD_SIZE) {
-				sendErrorMessage(bot, chatID, fromTail.Text, "menu")
-				return
-			}
 			data := &DataFromParser{
 				Text: fromTail.Text,
 				//Language: fromTail.Language,
@@ -490,7 +489,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	}
 }
 
-func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string) (*DataFromParser, error) {
+func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataFromParser, error) {
 	telegramFile, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
 	if err != nil {
 		return nil, fmt.Errorf("error get file:%v", err)
@@ -526,11 +525,29 @@ func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string) (*Data
 	if err != nil {
 		return nil, fmt.Errorf("error when creating form: %v", err)
 	}
-	if _, err := io.Copy(part, downloadResp.Body); err != nil {
-		return nil, fmt.Errorf("err copy: %v", err)
+	maxMB, err := strconv.ParseInt(conf.MAX_UPLOAD_SIZE, 10, 64)
+	if err != nil || maxMB <= 0 {
+		return nil, fmt.Errorf("invalid MAX_UPLOAD_SIZE: %q", conf.MAX_UPLOAD_SIZE)
+	}
+
+	maxBytes := maxMB * 1024 * 1024
+
+	copied, err := io.Copy(part, io.LimitReader(downloadResp.Body, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("error copying downloaded file: %w", err)
+	}
+	if copied > maxBytes {
+		log.Printf("Файл превышает допустимый размер в %s MB", conf.MAX_UPLOAD_SIZE)
+		sendErrorMessage(
+			bot,
+			chatID,
+			fmt.Sprintf("Файл превышает допустимый размер в %s MB", conf.MAX_UPLOAD_SIZE),
+			"menu",
+		)
+		return nil, nil
 	}
 	if err := form.Close(); err != nil {
-		return nil, fmt.Errorf("error when close form: %v", err)
+		return nil, fmt.Errorf("error closing multipart form: %w", err)
 	}
 
 	ctxPY, cancelPY := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -553,10 +570,6 @@ func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string) (*Data
 	var forHead DataFromParser
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == 413 {
-			forHead.Text = fmt.Sprintf("Файл превышает допустимый размер в %sMB", conf.MAX_UPLOAD_SIZE)
-			return &forHead, nil
-		}
 		return nil, fmt.Errorf(
 			"transcriber returned HTTP %d",
 			resp.StatusCode,

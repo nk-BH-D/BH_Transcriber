@@ -21,9 +21,6 @@ CONFIG = {
     "concurent": {
         "max_concurrent": int
     },
-    "MUS": {
-        "mus": int
-    }
 }
 
 def config_loader():
@@ -43,9 +40,6 @@ def config_loader():
     max_concurrent = os.getenv("WHISPER_MAX_CONCURRENT")
     if max_concurrent is None:
         raise ValueError("WHISPER_MAX_CONCURRENT environment variable is not set")
-    mus = os.getenv("MAX_UPLOAD_SIZE")
-    if mus is None:
-        raise ValueError("MAX_UPLOAD_SIZE environment variable is not set")
 
     
     CONFIG["whisper"]["model_size"] = model_size
@@ -53,7 +47,6 @@ def config_loader():
     CONFIG["whisper"]["compute_type"] = compute_type
     CONFIG["whisper"]["num_workers"] = int(num_workers)
     CONFIG["concurent"]["max_concurrent"] = int(max_concurrent)
-    CONFIG["MUS"]["mus"] = int(mus) *1024**2  # Convert MB to bytes
 
     logger.info(f"Configuration loaded: {CONFIG}")
     
@@ -86,7 +79,6 @@ app = FastAPI(title="Whisper Service", lifespan=lifespan)
 async def whisper_endpoint(file: UploadFile = File(...)):
     suffix = os.path.splitext(file.filename or "")[1] or ".audio"
     temp_path = None
-    uploaded_bytes = 0
 
     try:
         with tempfile.NamedTemporaryFile(
@@ -95,13 +87,6 @@ async def whisper_endpoint(file: UploadFile = File(...)):
             temp_path = temp.name
 
             while chunk := await file.read(1024 * 1024):
-                uploaded_bytes += len(chunk)
-                if uploaded_bytes > CONFIG["MUS"]["mus"]:
-                    logger.warning(f"Uploaded file size {uploaded_bytes} exceeds the limit of {CONFIG['MUS']['mus']} bytes")
-                    raise HTTPException(
-                        status_code=413,
-                        detail="Файл превышает допустимый размер",
-                    )
                 temp.write(chunk)
 
         async with app.state.transcribe_semaphore:
@@ -117,8 +102,6 @@ async def whisper_endpoint(file: UploadFile = File(...)):
             "language_probability": probability,
         }
 
-    except HTTPException:
-        raise
     except Exception as exc:
         logger.exception("Transcription failed")
         raise HTTPException(
