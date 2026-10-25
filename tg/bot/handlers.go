@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"mime/multipart"
@@ -52,12 +53,35 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 
 	result := fmt.Sprintf(
 		"Добро пожаловать в BH_Transcriber!\n\n"+
-			"Ознакомьтесь с документацией и пользовательским соглашением:\n%s\n\n"+
-			"Чтобы продолжить, примите соглашение и подпишитесь на канал проекта:\n%s",
-		conf.REPO_URL,
-		conf.TG_CHANNEL_URL,
+			"Ознакомьтесь с документацией и пользовательским соглашением на "+
+			"<a href=\"%s\">GitHub</a>\n\n"+
+			"Чтобы продолжить, примите соглашение и подпишитесь на канал проекта.",
+		html.EscapeString(conf.REPO_URL),
 	)
-	sendSuccessMessage(bot, chatID, result, "reg")
+	msg := tgbotapi.NewMessage(chatID, result)
+	msg.ParseMode = tgbotapi.ModeHTML
+	msg.ReplyMarkup = createRegistrKeybord()
+	if _, err := bot.Send(msg); err != nil {
+		log.Printf("error when sending register message: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error0:", "")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := us_db.DeleteUserData(ctx, userID)
+		if err != nil {
+			log.Printf("error when del user in db: %v\nUser: %d", err, userID)
+			sendSuccessMessage(
+				bot,
+				conf.ROOT_ID,
+				fmt.Sprintf(
+					"Не смогли удалить пользователя: %d\n"+
+						"Ошибка: %v",
+					userID,
+					err,
+				),
+				"menu_for_err",
+			)
+		}
+	}
 }
 
 func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
@@ -127,25 +151,39 @@ func ChekSub(bot *tgbotapi.BotAPI, userID, chatID int64) {
 		if fl {
 			sendSuccessMessage(bot, chatID, text, "menu")
 			return
-		} else {
+		}
+
+		if !fl {
 			sendErrorMessage(bot, chatID, text, "")
 			return
 		}
 	}
 }
 
-func Mark(bot *tgbotapi.BotAPI, userID, chatID int64, num_t, like, dis_like int) {
+func Mark(bot *tgbotapi.BotAPI, userID, chatID int64, like, dis_like int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := us_db.UpUserData(ctx, userID, num_t, like, dis_like)
+	err := us_db.UpUserData(ctx, userID, 0, like, dis_like)
 	if err != nil {
 		log.Printf("error when up user data: %v", err)
 		sendErrorMessage(bot, chatID, "Internal service error6: попробуйте снова позже", "menu")
-		return
+		return false
 	}
 
-	sendSuccessMessage(bot, chatID, "Оценка поставлена", "menu")
+	if like != 0 {
+		if msgID, ok := getStateMessage(chatID); ok {
+			keyboard := createGoodKeybord()
+			editMessageMarkup(bot, chatID, msgID, keyboard)
+		}
+	} else {
+		if msgID, ok := getStateMessage(chatID); ok {
+			keyboard := createBadKeybord()
+			editMessageMarkup(bot, chatID, msgID, keyboard)
+		}
+	}
+	// показывает что всё прошло хорошо и можно блокировать клаву
+	return true
 }
 
 func Order(bot *tgbotapi.BotAPI, userID, chatID int64, text string) {
@@ -161,10 +199,12 @@ func Order(bot *tgbotapi.BotAPI, userID, chatID int64, text string) {
 
 	otvet := fmt.Sprintf(
 		"Ваше коментарий добавлен и будет рассмотрен.\n"+
-			"ID вашего обращения - %d\n"+
-			"Спасибо за вклад в сообщество.",
+			"ID вашего обращения: %d.\n"+
+			"Спасибо за вклад в сообщество.\n"+
+			"Вы можете продолжить трансрибацию или перейти в Меню.",
 		error_id)
 	sendSuccessMessage(bot, chatID, otvet, "menu")
+	setUserState(chatID, map[string]string{"transcride": ""})
 }
 
 func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
@@ -424,8 +464,6 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		sendMsg, sendErr := bot.Send(msg)
 		if sendErr != nil {
 			log.Printf("error sending message: %s, %v", text, sendErr)
-			sendErrorMessage(bot, chatID, "Internal service error14: повторите попытку позже", "menu")
-			return
 		}
 
 		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName, chatID)
@@ -433,7 +471,6 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			log.Printf("error when dounload or send file: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
 			return
-
 		} else if fromTail == nil {
 			return
 		} else {
@@ -461,9 +498,12 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 
 			if err != nil {
 				log.Printf("error when up user data after transcribation: %v", err)
-				sendErrorMessage(bot, chatID, "Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова", "")
-				sendSuccessMessage(bot, chatID, data.Text, "ord")
-				return
+				sendSuccessMessage(
+					bot,
+					chatID,
+					"Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова",
+					"",
+				)
 			}
 			sendSuccessMessage(bot, chatID, data.Text, "ord")
 			return

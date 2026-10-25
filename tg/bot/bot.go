@@ -14,13 +14,15 @@ import (
 )
 
 var (
-	userStates = make(map[int64]map[string]string)
-	//forDelMessage = make(map[int64]int)
-	us_db  *db.PostgresUs
-	err_db *db.PostgresErrors
-	uSM    sync.RWMutex
-	//fDM           sync.RWMutex
-	conf *config.Config
+	userStates         = make(map[int64]map[string]string)
+	stateMessage       = make(map[int64]int)
+	bloсkOrderKeyboard = make(map[int64]string)
+	us_db              *db.PostgresUs
+	err_db             *db.PostgresErrors
+	uSM                sync.RWMutex
+	sMM                sync.RWMutex
+	bKM                sync.RWMutex
+	conf               *config.Config
 )
 
 // func fot syncing userState map
@@ -42,22 +44,39 @@ func deleteUserState(chatID int64) {
 }
 
 // funcs for synciong forDelMessage map
-//func setDelID(chatID int64, delID int) {
-//	fDM.Lock()
-//	defer fDM.Unlock()
-//	forDelMessage[chatID] = delID
-//}
-//func getDelID(chatID int64) (int, bool) {
-//	fDM.RLock()
-//	defer fDM.RUnlock()
-//	delID, ok := forDelMessage[chatID]
-//	return delID, ok
-//}
-//func deleteDelID(chatID int64) {
-//	fDM.Lock()
-//	defer fDM.Unlock()
-//	delete(forDelMessage, chatID)
-//}
+func setStateMessage(chatID int64, messageID int) {
+	sMM.Lock()
+	defer sMM.Unlock()
+	stateMessage[chatID] = messageID
+}
+func getStateMessage(chatID int64) (int, bool) {
+	sMM.RLock()
+	defer sMM.RUnlock()
+	messageID, ok := stateMessage[chatID]
+	return messageID, ok
+}
+func deleteStateMessage(chatID int64) {
+	sMM.Lock()
+	defer sMM.Unlock()
+	delete(stateMessage, chatID)
+}
+
+// funcs for synciong blokOrderKeyboart map
+func setBloсkOrderKeyboard(chatID int64, value string) {
+	bKM.Lock()
+	defer bKM.Unlock()
+	bloсkOrderKeyboard[chatID] = value
+}
+func getBloсkOrderKeyboard(chatID int64) string {
+	bKM.RLock()
+	defer bKM.RUnlock()
+	return bloсkOrderKeyboard[chatID]
+}
+func deleteBloсkOrderKeyboard(chatID int64) {
+	bKM.Lock()
+	defer bKM.Unlock()
+	delete(bloсkOrderKeyboard, chatID)
+}
 
 func Init(cfg *config.Config, pg_us *db.PostgresUs, pg_err *db.PostgresErrors) {
 	conf = cfg
@@ -76,7 +95,6 @@ func sendErrorMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom string
 		log.Printf("unknown button type: %s", buttom)
 	}
 
-	deleteUserState(chatID)
 	_, sendErr := bot.Send(msg)
 	if sendErr != nil {
 		log.Printf("errro sending message: %s, %v", message, sendErr)
@@ -104,34 +122,48 @@ func sendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom stri
 }
 
 func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list []string, buttom string) {
-	for _, message := range message_list {
-		msg := tgbotapi.NewMessage(chatID, message)
+	var (
+		fl          bool = false
+		globSendMsg tgbotapi.Message
+	)
 
-		switch buttom {
-		case "ord":
-			msg.ReplyMarkup = createOrderKetbord()
-		case "reg":
-			msg.ReplyMarkup = createRegistrKeybord()
-		case "menu":
-			msg.ReplyMarkup = createMenuKeybord()
-		case "command":
-			msg.ReplyMarkup = createCommandKeybord()
-		case "menu_for_error":
-			msg.ReplyMarkup = createErrorWorkKeybord()
-		case "":
-			msg.ReplyMarkup = nil
-		default:
-			log.Printf("unknown button type: %s", buttom)
-			sendErrorMessage(bot, chatID, "Internal service error1: повторите попытку позже", "menu")
-			return
+	for i, message := range message_list {
+		msg := tgbotapi.NewMessage(chatID, message)
+		// добавляем кнопку только к последнему куску сообщения
+		if i == len(message_list)-1 {
+			switch buttom {
+			case "ord":
+				msg.ReplyMarkup = createOrderKeybord()
+				fl = true
+			case "menu":
+				msg.ReplyMarkup = createMenuKeybord()
+			case "command":
+				msg.ReplyMarkup = createCommandKeybord()
+			case "menu_for_error":
+				msg.ReplyMarkup = createErrorWorkKeybord()
+			case "":
+				msg.ReplyMarkup = nil
+			default:
+				log.Printf("unknown button type: %s", buttom)
+				sendErrorMessage(bot, chatID, "Internal service error1: повторите попытку позже", "menu")
+				return
+			}
 		}
-		_, sendErr := bot.Send(msg)
+
+		sendMsg, sendErr := bot.Send(msg)
 		if sendErr != nil {
 			log.Printf("error sending message: %s, %v", message, sendErr)
 			sendErrorMessage(bot, chatID, fmt.Sprintf("произошла ошибка при отправке сообщения: %v", sendErr), "menu")
 			return
 		}
-		//setDelID(chatID, sendMsg.MessageID)
+		// так как кнопка только у последнего, сохраняем в map только его id
+		if i == len(message_list)-1 {
+			globSendMsg = sendMsg
+		}
+	}
+	if fl {
+		setStateMessage(chatID, globSendMsg.MessageID)
+		setBloсkOrderKeyboard(chatID, "unlock")
 	}
 }
 
@@ -144,6 +176,22 @@ func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list
 //		return
 //	}
 //}
+
+// функция изменения клавиатуры оценки трансрибации
+func editMessageMarkup(bot *tgbotapi.BotAPI, chatID int64, messageID int, newKeyboard tgbotapi.InlineKeyboardMarkup) {
+	edit := tgbotapi.NewEditMessageReplyMarkup(
+		chatID,
+		messageID,
+		newKeyboard,
+	)
+
+	_, err := bot.Request(edit)
+	if err != nil {
+		log.Printf("error when edit reply markup: %v", err)
+		sendErrorMessage(bot, chatID, "Оценка поставлена", "")
+		return
+	}
+}
 
 // спасатель
 func runSafely(bot *tgbotapi.BotAPI, chatID int64, name string, fn func()) {
@@ -171,13 +219,25 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		}
 	}()
 
-	if message.Text != "" && message.Text == "/start" {
-		deleteUserState(chatID)
-		runSafely(bot, chatID, "start", func() {
-			Register(bot, userID, chatID)
-		})
-		//log.Printf("Активныч горутин: %d\n", runtime.NumGoroutine())
-		return
+	if message.Text != "" {
+		if message.Text == "/start" {
+			deleteUserState(chatID)
+			deleteStateMessage(chatID)
+			deleteBloсkOrderKeyboard(chatID)
+			runSafely(bot, chatID, "start", func() {
+				Register(bot, userID, chatID)
+			})
+			//log.Printf("Активныч горутин: %d\n", runtime.NumGoroutine())
+			return
+		}
+
+		if message.Text == "/menu" {
+			deleteUserState(chatID)
+			deleteStateMessage(chatID)
+			deleteBloсkOrderKeyboard(chatID)
+			sendSuccessMessage(bot, chatID, "Выберете действие", "command")
+			return
+		}
 	}
 
 	if state, ok := getUserState(chatID); ok {
@@ -190,6 +250,7 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 				})
 				return
 			case "transcride":
+				setBloсkOrderKeyboard(chatID, "unlock")
 				runSafely(bot, chatID, "transcride", func() {
 					handlerTranscrib(bot, userID, chatID, message)
 				})
@@ -203,11 +264,9 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 				log.Printf("неизвестная команда: %s", key)
 				sendErrorMessage(bot, chatID, "Неизвестная команда", "menu")
 				return
-
 			}
 		}
 	}
-
 }
 
 func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery) {
@@ -226,6 +285,8 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 	switch data {
 	case "show_menu":
 		deleteUserState(chatID)
+		deleteStateMessage(chatID)
+		deleteBloсkOrderKeyboard(chatID)
 		sendSuccessMessage(bot, chatID, "Выберете действие", "command")
 		return
 	case "accept":
@@ -239,28 +300,52 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		})
 		return
 	case "good", "bad":
-		var (
-			like     int = 0
-			dis_like int = 0
-			name     string
-		)
-		if data == "good" {
-			like = 1
-			name = "good"
-		} else {
-			dis_like = 1
-			name = "bad"
+		state := getBloсkOrderKeyboard(chatID)
+		lastMessageID, ok := getStateMessage(chatID)
+		callbackMessageID := callbackQuery.Message.MessageID
+		if !ok || lastMessageID != callbackMessageID {
+			log.Printf("не существует или не совпадает ID")
+			return
 		}
-		runSafely(bot, chatID, name, func() {
-			Mark(bot, userID, chatID, 0, like, dis_like)
-		})
+		if state == "" || state == "unlock" {
+			var (
+				like     int = 0
+				dis_like int = 0
+				name     string
+			)
+			if data == "good" {
+				like = 1
+				name = "good"
+			} else {
+				dis_like = 1
+				name = "bad"
+			}
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("panic in %s: %v", name, r)
+						sendErrorMessage(bot, chatID, "Что-то пошло не так, попробуйте снова", "")
+					}
+				}()
+
+				fl := Mark(bot, userID, chatID, like, dis_like)
+				if fl {
+					setBloсkOrderKeyboard(chatID, "lock")
+				}
+			}()
+		} else {
+			log.Printf("User: %d tried to evaluate the transcription several times", chatID)
+			sendErrorMessage(bot, chatID, "Вы можете оценить трансрибацию только один раз", "")
+		}
 		return
 	case "order":
 		setUserState(chatID, map[string]string{"order": ""})
 		sendSuccessMessage(bot, chatID, "Отправьте текст c комментарием ошибки", "")
 		return
 	case "stat":
-		go Stat(bot, userID, chatID)
+		runSafely(bot, chatID, "stat", func() {
+			Stat(bot, userID, chatID)
+		})
 		return
 	case "transcride":
 		setUserState(chatID, map[string]string{"transcride": ""})
@@ -276,5 +361,4 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		return
 
 	}
-
 }

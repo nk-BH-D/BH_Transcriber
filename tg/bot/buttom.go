@@ -4,7 +4,7 @@ import (
 	tgbotapi "github.com/kirugan/telegram-bot-api/v5"
 )
 
-func createOrderKetbord() tgbotapi.InlineKeyboardMarkup {
+func createOrderKeybord() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👍", "good"),
@@ -16,10 +16,13 @@ func createOrderKetbord() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-func createGoodKetbord() tgbotapi.InlineKeyboardMarkup {
+func createGoodKeybord() tgbotapi.InlineKeyboardMarkup {
+	good := tgbotapi.NewInlineKeyboardButtonData("👍", "good")
+	good.Style = "success"
+
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👍", "good"),
+			good,
 			tgbotapi.NewInlineKeyboardButtonData("👎", "bad"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -28,11 +31,14 @@ func createGoodKetbord() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-func createBadKetbord() tgbotapi.InlineKeyboardMarkup {
+func createBadKeybord() tgbotapi.InlineKeyboardMarkup {
+	bad := tgbotapi.NewInlineKeyboardButtonData("👎", "bad")
+	bad.Style = "danger"
+
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👍", "good"),
-			tgbotapi.NewInlineKeyboardButtonData("👎", "bad"),
+			bad,
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Отзыв", "order"),
@@ -44,6 +50,9 @@ func createRegistrKeybord() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("✅Принять", "accept"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Подписаться", conf.TG_CHANNEL_URL),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Проверить подписку", "check subscription"),

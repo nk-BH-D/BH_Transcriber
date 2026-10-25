@@ -101,6 +101,7 @@ func main() {
 		defer close(botDone)
 		for update := range updates {
 			if update.Message != nil {
+				log.Printf("Entities: %+v", update.Message.Entities)
 				go tg.HandleMessage(bot, update.Message)
 			} else if update.CallbackQuery != nil {
 				go tg.HandleCallback(bot, update.CallbackQuery)

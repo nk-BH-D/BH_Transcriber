@@ -48,7 +48,7 @@ func (p *PostgresUs) ensureSchrema() error {
 		user_id BIGINT PRIMARY KEY,
 		status TEXT NOT NULL DEFAULT 'user'
 			CHECK (status in ('user', 'admin', 'root')),
-		accept BOOLEAN NOT NULL DEFAULT FALSE,
+		accept BOOLEAN NOT NULL DEFAULT FALSE,		
 		num_transcrip INTEGER NOT NULL DEFAULT 0,
 		like_count INTEGER NOT NULL DEFAULT 0,
 		dis_like INTEGER NOT NULL DEFAULT 0,
