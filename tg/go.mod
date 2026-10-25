@@ -3,8 +3,8 @@ module github.com/nk-BH-D/BH_Transcribator/tg
 go 1.27.1
 
 require (
-	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/kirugan/telegram-bot-api/v5 v5.9.0
 )
 
 require (

@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	tgbotapi "github.com/kirugan/telegram-bot-api/v5"
 )
 
 func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
@@ -44,7 +44,6 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 			sendErrorMessage(bot, chatID, "Internal service error2: попробуйте позже", "")
 			return
 		}
-
 	}
 
 	if fl {

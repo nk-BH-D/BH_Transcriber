@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/kirugan/telegram-bot-api/v5"
 	tg "github.com/nk-BH-D/BH_Transcribator/tg/bot"
 	config "github.com/nk-BH-D/BH_Transcribator/tg/internal/config"
 	db_dv "github.com/nk-BH-D/BH_Transcribator/tg/internal/db"

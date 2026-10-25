@@ -8,7 +8,7 @@ import (
 	//"strings"
 	"sync"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/kirugan/telegram-bot-api/v5"
 	config "github.com/nk-BH-D/BH_Transcribator/tg/internal/config"
 	db "github.com/nk-BH-D/BH_Transcribator/tg/internal/db"
 )
