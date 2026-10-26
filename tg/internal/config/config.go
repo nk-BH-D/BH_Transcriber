@@ -19,6 +19,7 @@ type Config struct {
 	ROOT_ID           int64
 	TG_CHANNEL_ID     int64
 	MAX_UPLOAD_SIZE   string
+	CUSTOM_EMOJI_ID   string
 }
 
 func Loader() (*Config, error) {
@@ -91,6 +92,10 @@ func Loader() (*Config, error) {
 	if mus == "" {
 		return nil, fmt.Errorf("error when getting mus")
 	}
+	ceID := os.Getenv("CUSTOM_EMOJI_ID")
+	if ceID == "" {
+		return nil, fmt.Errorf("error when getting CUSTOM_EMOJI_ID")
+	}
 
 	return &Config{
 		BOT_TOKEN:         bot_token,
@@ -104,5 +109,6 @@ func Loader() (*Config, error) {
 		ROOT_ID:           int_root_id,
 		TG_CHANNEL_ID:     int_th_id,
 		MAX_UPLOAD_SIZE:   mus,
+		CUSTOM_EMOJI_ID:   ceID,
 	}, nil
 }

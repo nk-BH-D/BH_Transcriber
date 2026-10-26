@@ -273,14 +273,32 @@ func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
 }
 
 func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
-	var coolList = make([]string, 0)
+	var (
+		coolList   = make([]string, 0)
+		set_status string
+	)
 
 	parts := strings.Fields(errorStr)
-	if len(parts) == 0 {
+	if len(parts) < 2 {
 		log.Printf("parts == 0")
-		sendErrorMessage(bot, chatID, "ID не может быть пустым", "menu")
+		sendErrorMessage(bot, chatID, "Укажите хотя бы один ID и селектор", "menu")
 		return
 	}
+
+	// проверка селектора
+	if parts[len(parts)-1] == "r" {
+		set_status = "resolved"
+	} else if parts[len(parts)-1] == "nvc" {
+		set_status = "no_valid_comment"
+	} else {
+		log.Printf("no valid selector")
+		sendErrorMessage(bot, chatID, "Вы указали не правильный селектор или не указали его вовсе", "")
+		return
+	}
+
+	// удаляем селектор перед обработкой
+	parts = parts[:len(parts)-1]
+
 	for _, id := range parts {
 		nID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
 		if err != nil {
@@ -326,7 +344,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 			continue
 		case "new":
 			ctxRE, cancelRE := context.WithTimeout(context.Background(), 5*time.Second)
-			status_after, err := err_db.ResolveError(ctxRE, nID)
+			status_after, err := err_db.ResolveError(ctxRE, nID, set_status)
 			cancelRE()
 			if err != nil {
 				if err == sql.ErrNoRows {
@@ -459,8 +477,19 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
 
 		// отправляем сообщение о начале работ
-		text := "Начали обработку"
+		text := "Начали обработку 🤩"
 		msg := tgbotapi.NewMessage(chatID, text)
+		if conf.CUSTOM_EMOJI_ID != "пока_нету" {
+			msg.Entities = []tgbotapi.MessageEntity{
+				{
+					Type:          "custom_emoji",
+					Offset:        17,
+					Length:        2,
+					CustomEmojiID: conf.CUSTOM_EMOJI_ID,
+				},
+			}
+		}
+
 		sendMsg, sendErr := bot.Send(msg)
 		if sendErr != nil {
 			log.Printf("error sending message: %s, %v", text, sendErr)

@@ -52,7 +52,7 @@ func createRegistrKeybord() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("✅Принять", "accept"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Подписаться", conf.TG_CHANNEL_URL),
+			tgbotapi.NewInlineKeyboardButtonURL("Подписаться", conf.TG_CHANNEL_URL),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Проверить подписку", "check subscription"),
@@ -83,9 +83,6 @@ func createErrorWorkKeybord() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Исправить ошибку", "fix_error"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("NVC", "no_valid_comment"),
 		),
 	)
 }

@@ -1,12 +1,11 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
-	//"runtime"
-
-	//"strings"
 	"sync"
+	"time"
 
 	tgbotapi "github.com/kirugan/telegram-bot-api/v5"
 	config "github.com/nk-BH-D/BH_Transcribator/tg/internal/config"
@@ -193,6 +192,76 @@ func editMessageMarkup(bot *tgbotapi.BotAPI, chatID int64, messageID int, newKey
 	}
 }
 
+// функция валидации пользователлей
+func userValid(bot *tgbotapi.BotAPI, userID, chatID int64) bool {
+	ctx, cancle := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancle()
+	accept, _, _, _, _, err := us_db.GetUserData(ctx, userID)
+	if err != nil {
+		log.Printf("error when valid user: %v", err)
+		return false
+	}
+	if !accept {
+		sendErrorMessage(bot, chatID, "Вам отказано в доступе.\nВозможно вы не подписаны на канал проекта или не приняли соглашение", "")
+		return false
+	}
+
+	var (
+		fl bool = false
+	)
+
+	member, err := bot.GetChatMember(
+		tgbotapi.GetChatMemberConfig{
+			ChatID: conf.TG_CHANNEL_ID,
+			UserID: userID,
+		},
+	)
+	if err != nil {
+		log.Printf("error when chek sub: %v", err)
+		sendErrorMessage(bot, chatID, "Internal service error16: поробуйте снова позже", "")
+		return false
+	} else {
+		switch member.Status {
+		case "creator", "administrator", "member":
+			fl = true
+		case "restricted":
+			if member.IsMember {
+				fl = true
+			} else {
+				sendErrorMessage(bot, chatID, "Вам отказано в доступе.\nВозможно вы не подписаны на канал проекта или не приняли соглашение", "")
+				fl = false
+			}
+		default:
+			sendErrorMessage(bot, chatID, "Вам отказано в доступе.\nВозможно вы не подписаны на канал проекта или не приняли соглашение", "")
+			fl = false
+		}
+	}
+	return fl
+}
+
+// функции валидации root
+func ValidRoot(bot *tgbotapi.BotAPI, userID, chatID int64, login string) bool {
+	if userID != conf.ROOT_ID {
+		log.Printf("не root работает с admin панелью")
+		sendSuccessMessage(
+			bot,
+			conf.ROOT_ID,
+			fmt.Sprintf(
+				"Не root работает с admin панелью!!!\n"+
+					"Данные нарушителя\n"+
+					"UserID: %d\n"+
+					"Login: %s",
+				userID,
+				login,
+			),
+			"menu_for_error",
+		)
+		sendErrorMessage(bot, chatID, "У вас нет прав доступа к этому функционалу", "")
+		return false
+	}
+	return true
+}
+
 // спасатель
 func runSafely(bot *tgbotapi.BotAPI, chatID int64, name string, fn func()) {
 	go func() {
@@ -221,13 +290,9 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	if message.Text != "" {
 		if message.Text == "/start" {
-			deleteUserState(chatID)
-			deleteStateMessage(chatID)
-			deleteBloсkOrderKeyboard(chatID)
 			runSafely(bot, chatID, "start", func() {
 				Register(bot, userID, chatID)
 			})
-			//log.Printf("Активныч горутин: %d\n", runtime.NumGoroutine())
 			return
 		}
 
@@ -244,18 +309,27 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		for key := range state {
 			switch key {
 			case "order":
+				if !userValid(bot, userID, chatID) {
+					return
+				}
 				text := message.Text
 				runSafely(bot, chatID, "order", func() {
 					Order(bot, userID, chatID, text)
 				})
 				return
 			case "transcride":
+				if !userValid(bot, userID, chatID) {
+					return
+				}
 				setBloсkOrderKeyboard(chatID, "unlock")
 				runSafely(bot, chatID, "transcride", func() {
 					handlerTranscrib(bot, userID, chatID, message)
 				})
 				return
 			case "fix_error":
+				if !ValidRoot(bot, userID, chatID, message.From.UserName) {
+					return
+				}
 				runSafely(bot, chatID, "fix_error", func() {
 					FixError(bot, chatID, message.Text)
 				})
@@ -311,31 +385,19 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 			var (
 				like     int = 0
 				dis_like int = 0
-				name     string
 			)
 			if data == "good" {
 				like = 1
-				name = "good"
 			} else {
 				dis_like = 1
-				name = "bad"
 			}
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Printf("panic in %s: %v", name, r)
-						sendErrorMessage(bot, chatID, "Что-то пошло не так, попробуйте снова", "")
-					}
-				}()
-
-				fl := Mark(bot, userID, chatID, like, dis_like)
-				if fl {
-					setBloсkOrderKeyboard(chatID, "lock")
-				}
-			}()
+			fl := Mark(bot, userID, chatID, like, dis_like)
+			if fl {
+				setBloсkOrderKeyboard(chatID, "lock")
+			}
 		} else {
 			log.Printf("User: %d tried to evaluate the transcription several times", chatID)
-			sendErrorMessage(bot, chatID, "Вы можете оценить трансрибацию только один раз", "")
+			sendErrorMessage(bot, chatID, "Вы можете оценить транскрибацию только один раз", "")
 		}
 		return
 	case "order":
@@ -353,12 +415,11 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		return
 	case "fix_error":
 		setUserState(chatID, map[string]string{"fix_error": ""})
-		sendSuccessMessage(bot, chatID, "Отправте errorID решённой(ых) проблема через пробел.", "")
+		sendSuccessMessage(bot, chatID, "Отправьте список ID и селектор", "")
 		return
 	default:
 		log.Printf("неизвестная команда: %s", data)
 		sendErrorMessage(bot, chatID, "Неизвестная команда", "menu")
 		return
-
 	}
 }

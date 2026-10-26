@@ -264,17 +264,18 @@ func (pe *PostgresErrors) GetUserError(ctx context.Context, userID int64) (map[i
 	return res, nil
 }
 
-func (pe *PostgresErrors) ResolveError(ctx context.Context, errorID int64) (string, error) {
+func (pe *PostgresErrors) ResolveError(ctx context.Context, errorID int64, set_status string) (string, error) {
 	var status string
 
 	err := pe.DB_err.QueryRowContext(
 		ctx,
 		`UPDATE errors
-         SET status = 'resolved',
+         SET status = $2,
              resolved_at = NOW()
          WHERE id = $1 AND status = 'new'
 		 RETURNING status`,
 		errorID,
+		set_status,
 	).Scan(&status)
 	return status, err
 }
