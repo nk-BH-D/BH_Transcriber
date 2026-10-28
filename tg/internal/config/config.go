@@ -7,19 +7,20 @@ import (
 )
 
 type Config struct {
-	BOT_TOKEN         string
-	WHISPER_PORT      string
-	HEALTH_CHECK_PORT string
-	REPO_URL          string
-	TG_CHANNEL_URL    string
-	POSTGRES_USER     string
-	DB_URL            string
-	POSTGRES_SMOC     int
-	POSTGRES_SMIC     int
-	ROOT_ID           int64
-	TG_CHANNEL_ID     int64
-	MAX_UPLOAD_SIZE   string
-	CUSTOM_EMOJI_ID   string
+	BOT_TOKEN             string
+	WHISPER_PORT          string
+	HEALTH_CHECK_PORT     string
+	REPO_URL              string
+	TG_CHANNEL_URL        string
+	POSTGRES_USER         string
+	DB_URL                string
+	POSTGRES_SMOC         int
+	POSTGRES_SMIC         int
+	ROOT_ID               int64
+	TG_CHANNEL_ID         int64
+	MAX_UPLOAD_SIZE       string
+	CUSTOM_EMOJI_ID       string
+	STICKER_PROCESSING_ID string
 }
 
 func Loader() (*Config, error) {
@@ -96,19 +97,24 @@ func Loader() (*Config, error) {
 	if ceID == "" {
 		return nil, fmt.Errorf("error when getting CUSTOM_EMOJI_ID")
 	}
+	spID := os.Getenv("STICKER_PROCESSING_ID")
+	if spID == "" {
+		return nil, fmt.Errorf("error when getting stiker ID")
+	}
 
 	return &Config{
-		BOT_TOKEN:         bot_token,
-		WHISPER_PORT:      wp,
-		HEALTH_CHECK_PORT: hcp,
-		REPO_URL:          repo_url,
-		TG_CHANNEL_URL:    tg_channel_url,
-		DB_URL:            db_url,
-		POSTGRES_SMOC:     int_db_smoc,
-		POSTGRES_SMIC:     int_db_smic,
-		ROOT_ID:           int_root_id,
-		TG_CHANNEL_ID:     int_th_id,
-		MAX_UPLOAD_SIZE:   mus,
-		CUSTOM_EMOJI_ID:   ceID,
+		BOT_TOKEN:             bot_token,
+		WHISPER_PORT:          wp,
+		HEALTH_CHECK_PORT:     hcp,
+		REPO_URL:              repo_url,
+		TG_CHANNEL_URL:        tg_channel_url,
+		DB_URL:                db_url,
+		POSTGRES_SMOC:         int_db_smoc,
+		POSTGRES_SMIC:         int_db_smic,
+		ROOT_ID:               int_root_id,
+		TG_CHANNEL_ID:         int_th_id,
+		MAX_UPLOAD_SIZE:       mus,
+		CUSTOM_EMOJI_ID:       ceID,
+		STICKER_PROCESSING_ID: spID,
 	}, nil
 }

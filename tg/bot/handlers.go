@@ -477,22 +477,28 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
 
 		// отправляем сообщение о начале работ
-		text := "Начали обработку 🤩"
+		text := "Обрабатываем, пожалуйтса подождите."
 		msg := tgbotapi.NewMessage(chatID, text)
-		if conf.CUSTOM_EMOJI_ID != "пока_нету" {
-			msg.Entities = []tgbotapi.MessageEntity{
-				{
-					Type:          "custom_emoji",
-					Offset:        17,
-					Length:        2,
-					CustomEmojiID: conf.CUSTOM_EMOJI_ID,
-				},
-			}
-		}
+
+		//msg.Entities = []tgbotapi.MessageEntity{🤩
+		//	{
+		//		Type:          "custom_emoji",
+		//		Offset:        17,
+		//		Length:        2,
+		//		CustomEmojiID: conf.CUSTOM_EMOJI_ID,
+		//	},
+		//}
 
 		sendMsg, sendErr := bot.Send(msg)
 		if sendErr != nil {
 			log.Printf("error sending message: %s, %v", text, sendErr)
+		}
+
+		// отправляем стикер
+		stic := tgbotapi.NewSticker(chatID, tgbotapi.FileID(conf.STICKER_PROCESSING_ID))
+		sendStic, sendErrStic := bot.Send(stic)
+		if sendErrStic != nil {
+			log.Printf("error sending stiker: %v", sendErrStic)
 		}
 
 		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName, chatID)
@@ -519,10 +525,17 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			err := us_db.UpUserData(ctx, userID, 1, 0, 0)
 
 			// удаляем сообщение о начале работ
-			delBot := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
-			_, errDel := bot.Request(delBot)
+			delMsg := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
+			_, errDel := bot.Request(delMsg)
 			if errDel != nil {
 				log.Printf("error when deleting message: %v", errDel)
+			}
+
+			// удаляем стикер
+			delStic := tgbotapi.NewDeleteMessage(chatID, sendStic.MessageID)
+			_, errDelStic := bot.Request(delStic)
+			if errDelStic != nil {
+				log.Printf("error when gel sticer: %v", errDelStic)
 			}
 
 			if err != nil {
