@@ -7,7 +7,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o transcriber-bin ./cmd/main.go
 
 FROM alpine:3.22
-RUN apk add --no-cache postgresql-client curl
+RUN apk add --no-cache postgresql-client curl ffmpeg
 
 WORKDIR /app
 COPY --from=builder /transcriber-app/transcriber-bin /app/transcriber-bin

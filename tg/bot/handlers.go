@@ -11,6 +11,8 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -476,14 +478,6 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	// отправляем сообщение о начале работ
 	text := "Обрабатываем, пожалуйтса подождите."
 	msg := tgbotapi.NewMessage(chatID, text)
-	//msg.Entities = []tgbotapi.MessageEntity{🤩
-	//	{
-	//		Type:          "custom_emoji",
-	//		Offset:        17,
-	//		Length:        2,
-	//		CustomEmojiID: conf.CUSTOM_EMOJI_ID,
-	//	},
-	//}
 	// отправляем сообщение о начале работ
 	sendMsg, sendErr := bot.Send(msg)
 	if sendErr != nil {
@@ -497,17 +491,18 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	sendStic, sendErrStic := bot.Send(stic)
 	if sendErrStic != nil {
 		log.Printf("error sending stiker: %v", sendErrStic)
-		// удаляем стикер
-		delStic := tgbotapi.NewDeleteMessage(chatID, sendStic.MessageID)
-		_, errDelStic := bot.Request(delStic)
-		if errDelStic != nil {
-			log.Printf("error when gel sticer: %v", errDelStic)
+		// удаляем сообщение о начале работ
+		delMsg := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
+		_, errDel := bot.Request(delMsg)
+		if errDel != nil {
+			log.Printf("error when deleting message: %v", errDel)
 		}
-		sendErrorMessage(bot, chatID, "Ошибка со стороны Telegram: уже решаем", "menu")
 		return
 	}
 
 	var fileID, fileName string
+	msgID := sendMsg.MessageID
+	sticID := sendStic.MessageID
 
 	switch {
 	case message.Voice != nil:
@@ -519,54 +514,63 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		if err != nil {
 			log.Printf("error when dounload file: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error17: попробуйте снова позже", "menu")
-			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
+			delMessageAndSticer(bot, msgID, sticID, chatID)
 			return
 		}
 		if dFS == nil {
-			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
+			delMessageAndSticer(bot, msgID, sticID, chatID)
 			return
 		}
 
-		fromTail, err := handlerSendPy(dFS)
-		if err != nil {
-			log.Printf("error when send file: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
-			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
-			return
-		} else {
-			data := &DataFromParser{
-				Text: fromTail.Text,
-				//Language: fromTail.Language,
-				//Probability: fromTail.Probability,
-			}
-			if strings.TrimSpace(data.Text) == "" {
-				log.Printf("text == 0 что-то пошло не так на стороне python")
-				sendErrorMessage(bot, chatID, "Internal service error11: попробуйте снова позже", "menu")
-				delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			err := us_db.UpUserData(ctx, userID, 1, 0, 0)
-
-			if err != nil {
-				log.Printf("error when up user data after transcribation: %v", err)
-				sendSuccessMessage(
-					bot,
-					chatID,
-					"Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова",
-					"",
-				)
-			}
-			sendSuccessMessage(bot, chatID, data.Text, "ord")
-			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
+		errAs := headAssistent(dFS, bot, userID, chatID)
+		if errAs != nil {
+			log.Printf("error in headAssistent: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: поробуйте снова позже", "menu")
+			delMessageAndSticer(bot, msgID, sticID, chatID)
 			return
 		}
+		delMessageAndSticer(bot, msgID, sticID, chatID)
+		return
+
 	case message.VideoNote != nil:
 		fileID = message.VideoNote.FileID
-		fileName = "circle.mp4"
+		fileName = "circle.mp3"
 		log.Printf("Circle: ID: %s, name: %s", fileID, fileName)
+
+		inputPath, err := handlerDounloadForCircle(bot, fileID)
+		if err != nil {
+			log.Printf("error when dounload circle: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error18: попробуйте снова позже", "menu")
+			delMessageAndSticer(bot, msgID, sticID, chatID)
+			return
+		}
+
+		// отложено удаляем файл
+		defer func() {
+			if err := os.Remove(inputPath); err != nil {
+				log.Printf("remove temporary circle file: %v", err)
+			}
+		}()
+
+		// достаём аудио и формируем файл
+		dFS, err := extractAudio(inputPath, fileName)
+		if err != nil {
+			log.Printf("error when extract audio or create form: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error19: попробуйте снова позже", "menu")
+			delMessageAndSticer(bot, msgID, sticID, chatID)
+			return
+		}
+
+		errAs := headAssistent(dFS, bot, userID, chatID)
+		if errAs != nil {
+			log.Printf("error in headAssistent: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: поробуйте снова позже", "menu")
+			delMessageAndSticer(bot, msgID, sticID, chatID)
+			return
+		}
+		delMessageAndSticer(bot, msgID, sticID, chatID)
+		return
+
 	case message.Audio != nil:
 		fileID = message.Audio.FileID
 		fileName = "audio.mp4"
@@ -594,6 +598,36 @@ func delMessageAndSticer(bot *tgbotapi.BotAPI, msgID int, sticID int, chatID int
 	}
 }
 
+func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64) error {
+	fromTail, err := handlerSendPy(dFS)
+	if err != nil {
+		return fmt.Errorf("error when send file: %w", err)
+	}
+	// если всё прошло успешно отдаём текст пользователю
+	data := &DataFromParser{
+		Text: fromTail.Text,
+		//Language: fromTail.Language,
+		//Probability: fromTail.Probability,
+	}
+	if strings.TrimSpace(data.Text) == "" {
+		return fmt.Errorf("text == 0 что-то пошло не так на стороне python")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = us_db.UpUserData(ctx, userID, 1, 0, 0)
+	if err != nil {
+		log.Printf("error when up user data after transcribation: %v", err)
+		sendSuccessMessage(
+			bot,
+			chatID,
+			"Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова",
+			"",
+		)
+	}
+	sendSuccessMessage(bot, chatID, data.Text, "ord")
+	return nil
+}
+
 func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataForSend, error) {
 	telegramFile, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
 	if err != nil {
@@ -604,7 +638,7 @@ func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chat
 	defer cancel()
 
 	downloadReq, err := http.NewRequestWithContext(
-		ctx, "GET", telegramFile.Link(bot.Token), nil,
+		ctx, "GET", telegramFile.Link(conf.BOT_TOKEN), nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error when get link on file:%v", err)
@@ -632,7 +666,6 @@ func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chat
 		return nil, fmt.Errorf("error when creating form: %v", err)
 	}
 
-	// в conf уже int64!!!
 	maxBytes := conf.MAX_UPLOAD_SIZE * 1024 * 1024
 
 	copied, err := io.Copy(part, io.LimitReader(downloadResp.Body, maxBytes+1))
@@ -651,6 +684,116 @@ func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chat
 	}
 	if err := form.Close(); err != nil {
 		return nil, fmt.Errorf("error closing multipart form: %w", err)
+	}
+
+	data := &DataForSend{
+		Body:        body,
+		ContentType: form.FormDataContentType(),
+	}
+
+	return data, nil
+}
+
+func handlerDounloadForCircle(bot *tgbotapi.BotAPI, fileID string) (string, error) {
+	// получаем файл от TG
+	file, err := bot.GetFile(tgbotapi.FileConfig{
+		FileID: fileID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("error when get file: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	req, errReq := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		file.Link(conf.BOT_TOKEN),
+		nil,
+	)
+	if errReq != nil {
+		return "", fmt.Errorf("error when create dounload req: %w", errReq)
+	}
+
+	resp, errResp := http.DefaultClient.Do(req)
+	if errResp != nil {
+		return "", fmt.Errorf("error when do req: %w", errResp)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("TG return status cod: %d", resp.StatusCode)
+	}
+
+	// создаём временный файл в docker tmp
+	tmp, errTmp := os.CreateTemp("/tmp/transcriber", "circle-*.mp4")
+	if errTmp != nil {
+		return "", fmt.Errorf("error when create file: %w", errTmp)
+	}
+
+	inputPath := tmp.Name()
+	keepFile := false
+
+	defer func() {
+		_ = tmp.Close()
+		if !keepFile {
+			err := os.Remove(inputPath)
+			if err != nil {
+				log.Printf("error when remove file: %v", err)
+			}
+		}
+	}()
+
+	// заполняем временный файл
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		return "", fmt.Errorf("error when save file: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("error when close file: %w", err)
+	}
+
+	// если всё прошло успешно сообщяем удалятелю не удалять и позвращаетм inputPath
+	keepFile = true
+	return inputPath, nil
+}
+
+func extractAudio(inputPath, fileName string) (*DataForSend, error) {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+
+	part, err := form.CreateFormFile("file", fileName)
+	if err != nil {
+		return nil, fmt.Errorf("error when create form file: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		ctx,
+		"ffmpeg",
+		"-i", inputPath,
+		"-vn",
+		"-ac", "1",
+		"-ar", "16000",
+		"-c:a", "libmp3lame",
+		"-q:a", "4",
+		"-f", "mp3",
+		"pipe:1",
+	)
+
+	var ffmpegOutput bytes.Buffer
+	cmd.Stdout = part
+	cmd.Stderr = &ffmpegOutput
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("error when run ffmpeg: %w\n%s", err, ffmpegOutput.String())
+	}
+
+	if err := form.Close(); err != nil {
+		return nil, fmt.Errorf("error when close form: %w", err)
 	}
 
 	data := &DataForSend{

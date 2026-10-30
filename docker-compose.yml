@@ -26,6 +26,8 @@ services:
       - .env  
     container_name: tr_tg
     restart: on-failure
+    tmpfs:
+      - /tmp/transcriber:size=75m
   
     depends_on:
       user_db:
