@@ -457,6 +457,11 @@ func GetErrorList(bot *tgbotapi.BotAPI, rootID int64) {
 	sendSuccessMessage(bot, rootID, res.String(), "menu_for_error")
 }
 
+type DataForSend struct {
+	Body        bytes.Buffer
+	ContentType string
+}
+
 type DataFromParser struct {
 	Text        string  `json:"text"`
 	Language    string  `json:"language"`
@@ -468,6 +473,40 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	// надо реализовать функцию помощник которая будет доставать аудио дорожку из кружкоф
 	// надо оставить боту возможноть работать не только с голосовыми и кружками но и
 	// с обычными ауди файлами с записями голоса, например песни и т.д.
+	// отправляем сообщение о начале работ
+	text := "Обрабатываем, пожалуйтса подождите."
+	msg := tgbotapi.NewMessage(chatID, text)
+	//msg.Entities = []tgbotapi.MessageEntity{🤩
+	//	{
+	//		Type:          "custom_emoji",
+	//		Offset:        17,
+	//		Length:        2,
+	//		CustomEmojiID: conf.CUSTOM_EMOJI_ID,
+	//	},
+	//}
+	// отправляем сообщение о начале работ
+	sendMsg, sendErr := bot.Send(msg)
+	if sendErr != nil {
+		log.Printf("error sending message: %s, %v", text, sendErr)
+		sendErrorMessage(bot, chatID, "Ошибка со стороны Telegram: уже решаем", "menu")
+		return
+	}
+
+	// отправляем стикер
+	stic := tgbotapi.NewSticker(chatID, tgbotapi.FileID(conf.STICKER_PROCESSING_ID))
+	sendStic, sendErrStic := bot.Send(stic)
+	if sendErrStic != nil {
+		log.Printf("error sending stiker: %v", sendErrStic)
+		// удаляем стикер
+		delStic := tgbotapi.NewDeleteMessage(chatID, sendStic.MessageID)
+		_, errDelStic := bot.Request(delStic)
+		if errDelStic != nil {
+			log.Printf("error when gel sticer: %v", errDelStic)
+		}
+		sendErrorMessage(bot, chatID, "Ошибка со стороны Telegram: уже решаем", "menu")
+		return
+	}
+
 	var fileID, fileName string
 
 	switch {
@@ -476,37 +515,23 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		fileName = "voice.ogg"
 		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
 
-		// отправляем сообщение о начале работ
-		text := "Обрабатываем, пожалуйтса подождите."
-		msg := tgbotapi.NewMessage(chatID, text)
-
-		//msg.Entities = []tgbotapi.MessageEntity{🤩
-		//	{
-		//		Type:          "custom_emoji",
-		//		Offset:        17,
-		//		Length:        2,
-		//		CustomEmojiID: conf.CUSTOM_EMOJI_ID,
-		//	},
-		//}
-
-		sendMsg, sendErr := bot.Send(msg)
-		if sendErr != nil {
-			log.Printf("error sending message: %s, %v", text, sendErr)
-		}
-
-		// отправляем стикер
-		stic := tgbotapi.NewSticker(chatID, tgbotapi.FileID(conf.STICKER_PROCESSING_ID))
-		sendStic, sendErrStic := bot.Send(stic)
-		if sendErrStic != nil {
-			log.Printf("error sending stiker: %v", sendErrStic)
-		}
-
-		fromTail, err := handlerDounloadSendPy(bot, fileID, fileName, chatID)
+		dFS, err := handlerDounloadForVoice(bot, fileID, fileName, chatID)
 		if err != nil {
-			log.Printf("error when dounload or send file: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
+			log.Printf("error when dounload file: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error17: попробуйте снова позже", "menu")
+			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
 			return
-		} else if fromTail == nil {
+		}
+		if dFS == nil {
+			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
+			return
+		}
+
+		fromTail, err := handlerSendPy(dFS)
+		if err != nil {
+			log.Printf("error when send file: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: попробуйте снова позже", "menu")
+			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
 			return
 		} else {
 			data := &DataFromParser{
@@ -517,26 +542,13 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			if strings.TrimSpace(data.Text) == "" {
 				log.Printf("text == 0 что-то пошло не так на стороне python")
 				sendErrorMessage(bot, chatID, "Internal service error11: попробуйте снова позже", "menu")
+				delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			err := us_db.UpUserData(ctx, userID, 1, 0, 0)
-
-			// удаляем сообщение о начале работ
-			delMsg := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
-			_, errDel := bot.Request(delMsg)
-			if errDel != nil {
-				log.Printf("error when deleting message: %v", errDel)
-			}
-
-			// удаляем стикер
-			delStic := tgbotapi.NewDeleteMessage(chatID, sendStic.MessageID)
-			_, errDelStic := bot.Request(delStic)
-			if errDelStic != nil {
-				log.Printf("error when gel sticer: %v", errDelStic)
-			}
 
 			if err != nil {
 				log.Printf("error when up user data after transcribation: %v", err)
@@ -548,21 +560,18 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 				)
 			}
 			sendSuccessMessage(bot, chatID, data.Text, "ord")
+			delMessageAndSticer(bot, sendMsg.MessageID, sendStic.MessageID, chatID)
 			return
 		}
 	case message.VideoNote != nil:
 		fileID = message.VideoNote.FileID
 		fileName = "circle.mp4"
 		log.Printf("Circle: ID: %s, name: %s", fileID, fileName)
-	// тут будет функция обработчки
-	// сначало вызов функции которая вытащит звуковую дорожку
-	// потом отправка в handlerDounloadSendPy
-	// получение результата
 	case message.Audio != nil:
 		fileID = message.Audio.FileID
 		fileName = "audio.mp4"
 		log.Printf("Audio file: ID: %s, name: %s", fileID, fileName)
-	// тут будет функция обработчки
+	// тут будет функция обработки
 	default:
 		log.Printf("wrong file type")
 		sendErrorMessage(bot, chatID, "Wrong file type", "menu")
@@ -570,7 +579,22 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	}
 }
 
-func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataFromParser, error) {
+func delMessageAndSticer(bot *tgbotapi.BotAPI, msgID int, sticID int, chatID int64) {
+	// удаляем сообщение о начале работ
+	delMsg := tgbotapi.NewDeleteMessage(chatID, msgID)
+	_, errDel := bot.Request(delMsg)
+	if errDel != nil {
+		log.Printf("error when deleting message: %v", errDel)
+	}
+	// удаляем стикер
+	delStic := tgbotapi.NewDeleteMessage(chatID, sticID)
+	_, errDelStic := bot.Request(delStic)
+	if errDelStic != nil {
+		log.Printf("error when gel sticer: %v", errDelStic)
+	}
+}
+
+func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataForSend, error) {
 	telegramFile, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
 	if err != nil {
 		return nil, fmt.Errorf("error get file:%v", err)
@@ -588,9 +612,10 @@ func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string, chatID
 
 	downloadResp, err := http.DefaultClient.Do(downloadReq)
 	if err != nil {
-		return nil, fmt.Errorf("error when douloading file:%v", err)
+		return nil, fmt.Errorf("error when douloading file: %v", err)
 	}
 	defer downloadResp.Body.Close()
+
 	// проверка, что скачали
 	if downloadResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(
@@ -606,23 +631,20 @@ func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string, chatID
 	if err != nil {
 		return nil, fmt.Errorf("error when creating form: %v", err)
 	}
-	maxMB, err := strconv.ParseInt(conf.MAX_UPLOAD_SIZE, 10, 64)
-	if err != nil || maxMB <= 0 {
-		return nil, fmt.Errorf("invalid MAX_UPLOAD_SIZE: %q", conf.MAX_UPLOAD_SIZE)
-	}
 
-	maxBytes := maxMB * 1024 * 1024
+	// в conf уже int64!!!
+	maxBytes := conf.MAX_UPLOAD_SIZE * 1024 * 1024
 
 	copied, err := io.Copy(part, io.LimitReader(downloadResp.Body, maxBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("error copying downloaded file: %w", err)
 	}
 	if copied > maxBytes {
-		log.Printf("Файл превышает допустимый размер в %s MB", conf.MAX_UPLOAD_SIZE)
+		log.Printf("Файл превышает допустимый размер в %d MB", conf.MAX_UPLOAD_SIZE)
 		sendErrorMessage(
 			bot,
 			chatID,
-			fmt.Sprintf("Файл превышает допустимый размер в %s MB", conf.MAX_UPLOAD_SIZE),
+			fmt.Sprintf("Файл превышает допустимый размер в %d MB", conf.MAX_UPLOAD_SIZE),
 			"menu",
 		)
 		return nil, nil
@@ -631,16 +653,25 @@ func handlerDounloadSendPy(bot *tgbotapi.BotAPI, fileID, fileName string, chatID
 		return nil, fmt.Errorf("error closing multipart form: %w", err)
 	}
 
+	data := &DataForSend{
+		Body:        body,
+		ContentType: form.FormDataContentType(),
+	}
+
+	return data, nil
+}
+
+func handlerSendPy(data *DataForSend) (*DataFromParser, error) {
 	ctxPY, cancelPY := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancelPY()
 
 	req, err := http.NewRequestWithContext(
-		ctxPY, "POST", conf.WHISPER_PORT, &body,
+		ctxPY, "POST", conf.WHISPER_PORT, &data.Body,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error when sending req: %v", err)
 	}
-	req.Header.Set("Content-Type", form.FormDataContentType())
+	req.Header.Set("Content-Type", data.ContentType)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

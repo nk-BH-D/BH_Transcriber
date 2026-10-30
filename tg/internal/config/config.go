@@ -18,7 +18,7 @@ type Config struct {
 	POSTGRES_SMIC         int
 	ROOT_ID               int64
 	TG_CHANNEL_ID         int64
-	MAX_UPLOAD_SIZE       string
+	MAX_UPLOAD_SIZE       int64
 	CUSTOM_EMOJI_ID       string
 	STICKER_PROCESSING_ID string
 }
@@ -93,6 +93,10 @@ func Loader() (*Config, error) {
 	if mus == "" {
 		return nil, fmt.Errorf("error when getting mus")
 	}
+	int_mus, err := strconv.ParseInt(mus, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("error when parse int mus")
+	}
 	ceID := os.Getenv("CUSTOM_EMOJI_ID")
 	if ceID == "" {
 		return nil, fmt.Errorf("error when getting CUSTOM_EMOJI_ID")
@@ -113,7 +117,7 @@ func Loader() (*Config, error) {
 		POSTGRES_SMIC:         int_db_smic,
 		ROOT_ID:               int_root_id,
 		TG_CHANNEL_ID:         int_th_id,
-		MAX_UPLOAD_SIZE:       mus,
+		MAX_UPLOAD_SIZE:       int_mus,
 		CUSTOM_EMOJI_ID:       ceID,
 		STICKER_PROCESSING_ID: spID,
 	}, nil
