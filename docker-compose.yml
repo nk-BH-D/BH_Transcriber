@@ -27,7 +27,7 @@ services:
     container_name: tr_tg
     restart: on-failure
     tmpfs:
-      - /tmp/transcriber:size=75m
+      - /tmp/transcriber:size=125m
   
     depends_on:
       user_db:

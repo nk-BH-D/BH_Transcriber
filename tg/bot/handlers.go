@@ -471,11 +471,6 @@ type DataFromParser struct {
 }
 
 func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbotapi.Message) {
-	// TODO:
-	// надо реализовать функцию помощник которая будет доставать аудио дорожку из кружкоф
-	// надо оставить боту возможноть работать не только с голосовыми и кружками но и
-	// с обычными ауди файлами с записями голоса, например песни и т.д.
-	// отправляем сообщение о начале работ
 	text := "Обрабатываем, пожалуйтса подождите."
 	msg := tgbotapi.NewMessage(chatID, text)
 	// отправляем сообщение о начале работ
@@ -510,75 +505,59 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		fileName = "voice.ogg"
 		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
 
-		dFS, err := handlerDounloadForVoice(bot, fileID, fileName, chatID)
+		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID)
 		if err != nil {
-			log.Printf("error when dounload file: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error17: попробуйте снова позже", "menu")
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
-		}
-		if dFS == nil {
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
-		}
-
-		errAs := headAssistent(dFS, bot, userID, chatID)
-		if errAs != nil {
-			log.Printf("error in headAssistent: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error10: поробуйте снова позже", "menu")
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
+			log.Printf("error in assistent voice and audio: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
 		}
 		delMessageAndSticer(bot, msgID, sticID, chatID)
 		return
-
 	case message.VideoNote != nil:
 		fileID = message.VideoNote.FileID
 		fileName = "circle.mp3"
 		log.Printf("Circle: ID: %s, name: %s", fileID, fileName)
 
-		inputPath, err := handlerDounloadForCircle(bot, fileID)
+		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID)
 		if err != nil {
-			log.Printf("error when dounload circle: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error18: попробуйте снова позже", "menu")
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
-		}
-
-		// отложено удаляем файл
-		defer func() {
-			if err := os.Remove(inputPath); err != nil {
-				log.Printf("remove temporary circle file: %v", err)
-			}
-		}()
-
-		// достаём аудио и формируем файл
-		dFS, err := extractAudio(inputPath, fileName)
-		if err != nil {
-			log.Printf("error when extract audio or create form: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error19: попробуйте снова позже", "menu")
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
-		}
-
-		errAs := headAssistent(dFS, bot, userID, chatID)
-		if errAs != nil {
-			log.Printf("error in headAssistent: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error10: поробуйте снова позже", "menu")
-			delMessageAndSticer(bot, msgID, sticID, chatID)
-			return
+			log.Printf("error in assistent videonote and video: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
 		}
 		delMessageAndSticer(bot, msgID, sticID, chatID)
 		return
-
 	case message.Audio != nil:
 		fileID = message.Audio.FileID
-		fileName = "audio.mp4"
+		fileName = message.Audio.FileName
+		if fileName == "" {
+			fileName = "audio.mp3"
+		}
 		log.Printf("Audio file: ID: %s, name: %s", fileID, fileName)
-	// тут будет функция обработки
+
+		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID)
+		if err != nil {
+			log.Printf("error in assistent voice and audio: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
+		}
+		delMessageAndSticer(bot, msgID, sticID, chatID)
+		return
+	case message.Video != nil:
+		fileID = message.Video.FileID
+		fileName = message.Video.FileName
+		if fileName == "" {
+			fileName = "video"
+		}
+		log.Printf("Video file: ID: %s, name: %s", fileID, fileName)
+
+		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID)
+		if err != nil {
+			log.Printf("error in assistent videonote and video: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
+		}
+		delMessageAndSticer(bot, msgID, sticID, chatID)
+		return
 	default:
 		log.Printf("wrong file type")
 		sendErrorMessage(bot, chatID, "Wrong file type", "menu")
+		delMessageAndSticer(bot, msgID, sticID, chatID)
 		return
 	}
 }
@@ -596,6 +575,50 @@ func delMessageAndSticer(bot *tgbotapi.BotAPI, msgID int, sticID int, chatID int
 	if errDelStic != nil {
 		log.Printf("error when gel sticer: %v", errDelStic)
 	}
+}
+
+func assistentVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64) error {
+	dFS, err := handlerDounloadVoiceAndAudio(bot, fileID, fileName, chatID)
+	if err != nil {
+		return fmt.Errorf("error when dounload file: %w", err)
+	}
+	if dFS == nil {
+		return nil
+	}
+	errAs := headAssistent(dFS, bot, userID, chatID)
+	if errAs != nil {
+		return fmt.Errorf("error in headAssistent: %w", err)
+	}
+	return nil
+}
+
+func assistentVideoNoteAndVideo(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64) error {
+	inputPath, err := handlerDounloadCircleAndVideo(bot, fileID, chatID)
+	if err != nil {
+		return fmt.Errorf("error when dounload circle: %w", err)
+	}
+	if inputPath == "" {
+		return nil
+	}
+
+	// отложено удаляем файл
+	defer func() {
+		if err := os.Remove(inputPath); err != nil {
+			log.Printf("remove temporary circle file: %v", err)
+		}
+	}()
+
+	// достаём аудио и формируем файл
+	dFS, err := extractAudio(inputPath, fileName)
+	if err != nil {
+		return fmt.Errorf("error when extract audio or create form: %w", err)
+	}
+
+	errAs := headAssistent(dFS, bot, userID, chatID)
+	if errAs != nil {
+		return fmt.Errorf("error in headAssistent: %w", err)
+	}
+	return nil
 }
 
 func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64) error {
@@ -628,7 +651,7 @@ func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64)
 	return nil
 }
 
-func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataForSend, error) {
+func handlerDounloadVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, chatID int64) (*DataForSend, error) {
 	telegramFile, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
 	if err != nil {
 		return nil, fmt.Errorf("error get file:%v", err)
@@ -694,7 +717,7 @@ func handlerDounloadForVoice(bot *tgbotapi.BotAPI, fileID, fileName string, chat
 	return data, nil
 }
 
-func handlerDounloadForCircle(bot *tgbotapi.BotAPI, fileID string) (string, error) {
+func handlerDounloadCircleAndVideo(bot *tgbotapi.BotAPI, fileID string, chatID int64) (string, error) {
 	// получаем файл от TG
 	file, err := bot.GetFile(tgbotapi.FileConfig{
 		FileID: fileID,
@@ -745,9 +768,22 @@ func handlerDounloadForCircle(bot *tgbotapi.BotAPI, fileID string) (string, erro
 		}
 	}()
 
+	maxBytes := conf.MAX_UPLOAD_SIZE * 1024 * 1024
+
 	// заполняем временный файл
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	copied, err := io.Copy(tmp, io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
 		return "", fmt.Errorf("error when save file: %w", err)
+	}
+	if copied > maxBytes {
+		log.Printf("Файл превышает допустимый размер в %d MB", conf.MAX_UPLOAD_SIZE)
+		sendErrorMessage(
+			bot,
+			chatID,
+			fmt.Sprintf("Файл превышает допустимый размер в %d MB", conf.MAX_UPLOAD_SIZE),
+			"menu",
+		)
+		return "", nil
 	}
 
 	if err := tmp.Close(); err != nil {
