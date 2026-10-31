@@ -247,9 +247,12 @@ func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
 		// формирования сообщения
 		for _, key := range keys {
 			var smail string
-			if dick_err[key] == "resolved" {
+			switch dick_err[key] {
+			case "resolved":
 				smail = "✅"
-			} else {
+			case "no_valid_comment":
+				smail = "❌"
+			default:
 				smail = "🕓"
 			}
 
@@ -340,7 +343,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 		}
 
 		switch status {
-		case "in_progress", "resolved", "no_valid_comment":
+		case "resolved", "no_valid_comment":
 			log.Printf("полученно id уже решённой проблемы")
 			sendErrorMessage(bot, chatID, "Эта проблема была решена", "")
 			continue
@@ -380,7 +383,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 	if len(coolList) != 0 {
 		var res strings.Builder
 
-		res.WriteString("Исправленный задачи:")
+		res.WriteString("Исправленный задачи:\n")
 
 		for i, sID := range coolList {
 			if i > 0 {
@@ -457,6 +460,29 @@ func GetErrorList(bot *tgbotapi.BotAPI, rootID int64) {
 	}
 
 	sendSuccessMessage(bot, rootID, res.String(), "menu_for_error")
+}
+
+func GeneralStat(bot *tgbotapi.BotAPI, rootID int64) {
+	ctxGGS, cancelGGS := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelGGS()
+
+	num, like, dis_like, err := us_db.GetGeneralStatistics(ctxGGS)
+	if err != nil {
+		log.Printf("error when get general statistic: %v", err)
+		sendErrorMessage(bot, rootID, "Не получилось получить статистику из-за внутреней ошибки базы", "menu")
+		return
+	}
+	text := fmt.Sprintf(
+		"Статистика\n"+
+			"Количесво успешный трансрибаций: %d\n"+
+			"Количество лайков: %d\n"+
+			"Количество дизлайков: %d\n",
+		num,
+		like,
+		dis_like,
+	)
+
+	sendSuccessMessage(bot, rootID, text, "menu")
 }
 
 type DataForSend struct {

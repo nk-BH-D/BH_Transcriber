@@ -66,7 +66,7 @@ func createCommandKeybord() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("Транскрибация", "transcride"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Моя статистика", "stat"),
+			tgbotapi.NewInlineKeyboardButtonData("Моя статистика", "my_stat"),
 		),
 	)
 }
@@ -83,6 +83,9 @@ func createErrorWorkKeybord() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Исправить ошибку", "fix_error"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Получить статистику", "stat"),
 		),
 	)
 }

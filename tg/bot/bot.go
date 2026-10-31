@@ -404,11 +404,18 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		setUserState(chatID, map[string]string{"order": ""})
 		sendSuccessMessage(bot, chatID, "Отправьте текст c комментарием ошибки", "")
 		return
-	case "stat":
-		runSafely(bot, chatID, "stat", func() {
+	case "my_stat":
+		runSafely(bot, chatID, "my_stat", func() {
 			Stat(bot, userID, chatID)
 		})
 		return
+	case "stat":
+		if !ValidRoot(bot, userID, chatID, callbackQuery.From.UserName) {
+			return
+		}
+		runSafely(bot, chatID, "stat", func() {
+			GeneralStat(bot, conf.ROOT_ID)
+		})
 	case "transcride":
 		setUserState(chatID, map[string]string{"transcride": ""})
 		sendSuccessMessage(bot, chatID, "Отправьте ваше аудио", "")

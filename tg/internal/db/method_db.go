@@ -88,6 +88,26 @@ func (p *PostgresUs) GetUserData(ctx context.Context, user_id int64) (bool, int,
 	return accept, num_t, like, dis_like, reg_time, nil
 }
 
+func (p *PostgresUs) GetGeneralStatistics(ctx context.Context) (int, int, int, error) {
+	var (
+		all_num     int
+		all_like    int
+		all_dislike int
+	)
+	row := p.DB_us.QueryRowContext(
+		ctx,
+		`SELECT
+    		COALESCE(SUM(num_transcrip), 0),
+    		COALESCE(SUM(like_count), 0),
+    		COALESCE(SUM(dis_like), 0)
+		FROM users;`,
+	)
+	if err := row.Scan(&all_num, &all_like, &all_dislike); err != nil {
+		return 0, 0, 0, err
+	}
+	return all_num, all_like, all_dislike, nil
+}
+
 func (p *PostgresUs) UpUserAccept(ctx context.Context, user_id int64, accept bool) error {
 	_, err := p.DB_us.ExecContext(
 		ctx,
@@ -160,7 +180,7 @@ func (pe *PostgresErrors) ensureSchremaErr() error {
     	user_id BIGINT NOT NULL,
     	comment TEXT NOT NULL,
     	status TEXT NOT NULL DEFAULT 'new'
-        	CHECK (status IN ('new', 'in_progress', 'resolved', 'no_valid_comment')),
+        	CHECK (status IN ('new', 'resolved', 'no_valid_comment')),
     	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     	resolved_at TIMESTAMPTZ
 	);`
