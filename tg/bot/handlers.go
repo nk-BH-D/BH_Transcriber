@@ -44,7 +44,7 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 			return
 		} else {
 			log.Printf("error when insert user: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error2: попробуйте позже", "")
+			sendErrorMessage(bot, chatID, "Internal service error2: повторите попытку позже", "")
 			return
 		}
 	}
@@ -65,7 +65,7 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	msg.ReplyMarkup = createRegistrKeybord()
 	if _, err := bot.Send(msg); err != nil {
 		log.Printf("error when sending register message: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error0:", "")
+		sendErrorMessage(bot, chatID, "Internal service error0: повторите попытку позже", "")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := us_db.DeleteUserData(ctx, userID)
@@ -93,7 +93,7 @@ func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	accept, _, _, _, _, err := us_db.GetUserData(ctx, userID)
 	if err != nil {
 		log.Printf("error when get users data: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error3: попробуйте снова позже", "")
+		sendErrorMessage(bot, chatID, "Internal service error3: повторите попытку позже", "")
 		return
 	}
 
@@ -104,7 +104,7 @@ func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
 		err := us_db.UpUserAccept(ctxChange, userID, true)
 		if err != nil {
 			log.Printf("error when up user accept: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error4: попробуйте снова позже", "")
+			sendErrorMessage(bot, chatID, "Internal service error4: повторите попытку позже", "")
 			return
 		}
 		sendSuccessMessage(bot, chatID, "Соглашение принято", "")
@@ -130,7 +130,7 @@ func ChekSub(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	)
 	if err != nil {
 		log.Printf("error when chek sub: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error5: поробуйте снова позже", "")
+		sendErrorMessage(bot, chatID, "Internal service error5: повторите попытку позже", "")
 		return
 	} else {
 		switch member.Status {
@@ -169,7 +169,7 @@ func Mark(bot *tgbotapi.BotAPI, userID, chatID int64, like, dis_like int) bool {
 	err := us_db.UpUserData(ctx, userID, 0, like, dis_like)
 	if err != nil {
 		log.Printf("error when up user data: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error6: попробуйте снова позже", "menu")
+		sendErrorMessage(bot, chatID, "Internal service error6: повторите попытку позже", "menu")
 		return false
 	}
 
@@ -195,7 +195,7 @@ func Order(bot *tgbotapi.BotAPI, userID, chatID int64, text string) {
 	error_id, err := err_db.InsertError(ctx, userID, text)
 	if err != nil {
 		log.Printf("error when inser error: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error7: попробуйте снова позже", "menu")
+		sendErrorMessage(bot, chatID, "Internal service error7: повторите попытку позже", "menu")
 		return
 	}
 
@@ -216,7 +216,7 @@ func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	_, num_t, like, dis_like, reg_time, err := us_db.GetUserData(ctxUS, userID)
 	if err != nil {
 		log.Printf("error when getting user date: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error8: попробуйте снова позже", "menu")
+		sendErrorMessage(bot, chatID, "Internal service error8: повторите попытку позже", "menu")
 		return
 	}
 
@@ -231,7 +231,7 @@ func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	dick_err, err = err_db.GetUserError(ctxERR, userID)
 	if err != nil {
 		log.Printf("error when get user error: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error9: попробуйте снова позже", "menu")
+		sendErrorMessage(bot, chatID, "Internal service error9: повторите попытку позже", "menu")
 		return
 	}
 
@@ -334,7 +334,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 				continue
 			} else {
 				log.Printf("error when finding id")
-				sendErrorMessage(bot, chatID, "Internal service error12: попробуйте попытку позже", "menu")
+				sendErrorMessage(bot, chatID, "Internal service error12: повторите попытку позже", "menu")
 				return
 			}
 		}

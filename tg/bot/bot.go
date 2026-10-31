@@ -218,7 +218,7 @@ func userValid(bot *tgbotapi.BotAPI, userID, chatID int64) bool {
 	)
 	if err != nil {
 		log.Printf("error when chek sub: %v", err)
-		sendErrorMessage(bot, chatID, "Internal service error14: поробуйте снова позже", "")
+		sendErrorMessage(bot, chatID, "Internal service error14: повторите попытку позже", "")
 		return false
 	} else {
 		switch member.Status {
