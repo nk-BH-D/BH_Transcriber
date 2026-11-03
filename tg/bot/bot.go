@@ -100,7 +100,7 @@ func sendErrorMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom string
 	}
 }
 
-func sendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom string) {
+func sendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom string, msgID int) {
 	message_list := []string{}
 	if len(message) > 4096 {
 		runes := []rune(message)
@@ -113,14 +113,14 @@ func sendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message, buttom stri
 
 			message_list = append(message_list, string(runes[i:end]))
 		}
-		assistedSendSuccessMessage(bot, chatID, message_list, buttom)
+		assistedSendSuccessMessage(bot, chatID, message_list, buttom, msgID)
 	} else {
 		message_list = append(message_list, message)
-		assistedSendSuccessMessage(bot, chatID, message_list, buttom)
+		assistedSendSuccessMessage(bot, chatID, message_list, buttom, msgID)
 	}
 }
 
-func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list []string, buttom string) {
+func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list []string, buttom string, msgID int) {
 	var (
 		fl          bool = false
 		globSendMsg tgbotapi.Message
@@ -128,12 +128,18 @@ func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list
 
 	for i, message := range message_list {
 		msg := tgbotapi.NewMessage(chatID, message)
+		if msgID != 0 {
+			msg.ReplyParameters = &tgbotapi.ReplyParameters{MessageID: msgID}
+		}
 		// добавляем кнопку только к последнему куску сообщения
 		if i == len(message_list)-1 {
 			switch buttom {
 			case "ord":
 				msg.ReplyMarkup = createOrderKeybord()
 				fl = true
+				msg.ReplyParameters = &tgbotapi.ReplyParameters{
+					MessageID: msgID,
+				}
 			case "menu":
 				msg.ReplyMarkup = createMenuKeybord()
 			case "command":
@@ -255,6 +261,7 @@ func ValidRoot(bot *tgbotapi.BotAPI, userID, chatID int64, login string) bool {
 				login,
 			),
 			"menu_for_error",
+			0,
 		)
 		sendErrorMessage(bot, chatID, "У вас нет прав доступа к этому функционалу", "")
 		return false
@@ -300,7 +307,7 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			deleteUserState(chatID)
 			deleteStateMessage(chatID)
 			deleteBloсkOrderKeyboard(chatID)
-			sendSuccessMessage(bot, chatID, "Выберете действие", "command")
+			sendSuccessMessage(bot, chatID, "Выберете действие", "command", 0)
 			return
 		}
 	}
@@ -361,7 +368,7 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		deleteUserState(chatID)
 		deleteStateMessage(chatID)
 		deleteBloсkOrderKeyboard(chatID)
-		sendSuccessMessage(bot, chatID, "Выберете действие", "command")
+		sendSuccessMessage(bot, chatID, "Выберете действие", "command", 0)
 		return
 	case "accept":
 		runSafely(bot, chatID, "accept", func() {
@@ -402,7 +409,7 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		return
 	case "order":
 		setUserState(chatID, map[string]string{"order": ""})
-		sendSuccessMessage(bot, chatID, "Отправьте текст c комментарием ошибки", "")
+		sendSuccessMessage(bot, chatID, "Отправьте текст c комментарием ошибки", "", 0)
 		return
 	case "my_stat":
 		runSafely(bot, chatID, "my_stat", func() {
@@ -418,11 +425,11 @@ func HandleCallback(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery)
 		})
 	case "transcride":
 		setUserState(chatID, map[string]string{"transcride": ""})
-		sendSuccessMessage(bot, chatID, "Отправьте ваше аудио", "")
+		sendSuccessMessage(bot, chatID, "Отправьте ваше аудио", "", 0)
 		return
 	case "fix_error":
 		setUserState(chatID, map[string]string{"fix_error": ""})
-		sendSuccessMessage(bot, chatID, "Отправьте список ID и селектор", "")
+		sendSuccessMessage(bot, chatID, "Отправьте список ID и селектор", "", 0)
 		return
 	default:
 		log.Printf("неизвестная команда: %s", data)

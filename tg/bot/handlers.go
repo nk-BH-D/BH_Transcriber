@@ -40,7 +40,7 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	err := us_db.InsertUser(ctx, userID, status)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
-			sendSuccessMessage(bot, chatID, "Вы уже зарегестрированы", "menu")
+			sendSuccessMessage(bot, chatID, "Вы уже зарегестрированы", "menu", 0)
 			return
 		} else {
 			log.Printf("error when insert user: %v", err)
@@ -50,7 +50,7 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 	}
 
 	if fl {
-		sendSuccessMessage(bot, chatID, "Вы root", "menu")
+		sendSuccessMessage(bot, chatID, "Вы root", "menu", 0)
 	}
 
 	result := fmt.Sprintf(
@@ -81,6 +81,7 @@ func Register(bot *tgbotapi.BotAPI, userID, chatID int64) {
 					err,
 				),
 				"menu_for_err",
+				0,
 			)
 		}
 	}
@@ -107,10 +108,10 @@ func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
 			sendErrorMessage(bot, chatID, "Internal service error4: повторите попытку позже", "")
 			return
 		}
-		sendSuccessMessage(bot, chatID, "Соглашение принято", "")
+		sendSuccessMessage(bot, chatID, "Соглашение принято", "", 0)
 		return
 	} else {
-		sendSuccessMessage(bot, chatID, "Вы уже приняли пользовательское соглашение", "menu")
+		sendSuccessMessage(bot, chatID, "Вы уже приняли пользовательское соглашение", "menu", 0)
 		return
 	}
 
@@ -151,7 +152,7 @@ func ChekSub(bot *tgbotapi.BotAPI, userID, chatID int64) {
 		}
 
 		if fl {
-			sendSuccessMessage(bot, chatID, text, "menu")
+			sendSuccessMessage(bot, chatID, text, "menu", 0)
 			return
 		}
 
@@ -205,7 +206,7 @@ func Order(bot *tgbotapi.BotAPI, userID, chatID int64, text string) {
 			"Спасибо за вклад в сообщество.\n"+
 			"Вы можете продолжить трансрибацию или перейти в Меню.",
 		error_id)
-	sendSuccessMessage(bot, chatID, otvet, "menu")
+	sendSuccessMessage(bot, chatID, otvet, "menu", 0)
 	setUserState(chatID, map[string]string{"transcride": ""})
 }
 
@@ -274,7 +275,7 @@ func Stat(bot *tgbotapi.BotAPI, userID, chatID int64) {
 			"📨 Ваши обращения:\n", userID, reg_time.Format("02.01.2006 15:04:05"), num_t, like, dis_like,
 	) + res_err.String()
 
-	sendSuccessMessage(bot, chatID, result, "menu")
+	sendSuccessMessage(bot, chatID, result, "menu", 0)
 }
 
 func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
@@ -371,6 +372,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 					status_after,
 				),
 				"",
+				0,
 			)
 			coolList = append(coolList, strconv.FormatInt(nID, 10))
 		default:
@@ -401,6 +403,7 @@ func FixError(bot *tgbotapi.BotAPI, chatID int64, errorStr string) {
 			chatID,
 			res.String(),
 			"menu",
+			0,
 		)
 	} else {
 		log.Printf("0 исправленных проблем")
@@ -459,7 +462,7 @@ func GetErrorList(bot *tgbotapi.BotAPI, rootID int64) {
 		res.WriteString("Обращений пока нет")
 	}
 
-	sendSuccessMessage(bot, rootID, res.String(), "menu_for_error")
+	sendSuccessMessage(bot, rootID, res.String(), "menu_for_error", 0)
 }
 
 func GeneralStat(bot *tgbotapi.BotAPI, rootID int64) {
@@ -482,7 +485,7 @@ func GeneralStat(bot *tgbotapi.BotAPI, rootID int64) {
 		dis_like,
 	)
 
-	sendSuccessMessage(bot, rootID, text, "menu")
+	sendSuccessMessage(bot, rootID, text, "menu", 0)
 }
 
 type DataForSend struct {
@@ -531,7 +534,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		fileName = "voice.ogg"
 		log.Printf("Voice: ID:%s, name: %s", fileID, fileName)
 
-		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID)
+		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID, message.MessageID)
 		if err != nil {
 			log.Printf("error in assistent voice and audio: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
@@ -543,7 +546,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		fileName = "circle.mp3"
 		log.Printf("Circle: ID: %s, name: %s", fileID, fileName)
 
-		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID)
+		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID, message.MessageID)
 		if err != nil {
 			log.Printf("error in assistent videonote and video: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
@@ -558,7 +561,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		}
 		log.Printf("Audio file: ID: %s, name: %s", fileID, fileName)
 
-		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID)
+		err := assistentVoiceAndAudio(bot, fileID, fileName, userID, chatID, message.MessageID)
 		if err != nil {
 			log.Printf("error in assistent voice and audio: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
@@ -573,7 +576,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 		}
 		log.Printf("Video file: ID: %s, name: %s", fileID, fileName)
 
-		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID)
+		err := assistentVideoNoteAndVideo(bot, fileID, fileName, userID, chatID, message.MessageID)
 		if err != nil {
 			log.Printf("error in assistent videonote and video: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
@@ -603,7 +606,7 @@ func delMessageAndSticer(bot *tgbotapi.BotAPI, msgID int, sticID int, chatID int
 	}
 }
 
-func assistentVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64) error {
+func assistentVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64, messageID int) error {
 	dFS, err := handlerDounloadVoiceAndAudio(bot, fileID, fileName, chatID)
 	if err != nil {
 		return fmt.Errorf("error when dounload file: %w", err)
@@ -611,14 +614,14 @@ func assistentVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, userI
 	if dFS == nil {
 		return nil
 	}
-	errAs := headAssistent(dFS, bot, userID, chatID)
+	errAs := headAssistent(dFS, bot, userID, chatID, messageID)
 	if errAs != nil {
 		return fmt.Errorf("error in headAssistent: %w", err)
 	}
 	return nil
 }
 
-func assistentVideoNoteAndVideo(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64) error {
+func assistentVideoNoteAndVideo(bot *tgbotapi.BotAPI, fileID, fileName string, userID, chatID int64, messageID int) error {
 	inputPath, err := handlerDounloadCircleAndVideo(bot, fileID, chatID)
 	if err != nil {
 		return fmt.Errorf("error when dounload circle: %w", err)
@@ -640,14 +643,14 @@ func assistentVideoNoteAndVideo(bot *tgbotapi.BotAPI, fileID, fileName string, u
 		return fmt.Errorf("error when extract audio or create form: %w", err)
 	}
 
-	errAs := headAssistent(dFS, bot, userID, chatID)
+	errAs := headAssistent(dFS, bot, userID, chatID, messageID)
 	if errAs != nil {
-		return fmt.Errorf("error in headAssistent: %w", err)
+		return fmt.Errorf("error in headAssistent: %w", errAs)
 	}
 	return nil
 }
 
-func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64) error {
+func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64, messageID int) error {
 	fromTail, err := handlerSendPy(dFS)
 	if err != nil {
 		return fmt.Errorf("error when send file: %w", err)
@@ -671,9 +674,10 @@ func headAssistent(dFS *DataForSend, bot *tgbotapi.BotAPI, userID, chatID int64)
 			chatID,
 			"Ваша статистика не обновилась по вине внутренней ошибки базы,\n но трансрибация готова",
 			"",
+			0,
 		)
 	}
-	sendSuccessMessage(bot, chatID, data.Text, "ord")
+	sendSuccessMessage(bot, chatID, data.Text, "ord", messageID)
 	return nil
 }
 
