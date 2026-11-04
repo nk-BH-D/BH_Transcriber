@@ -871,7 +871,7 @@ func extractAudio(inputPath, fileName string) (*DataForSend, error) {
 }
 
 func handlerSendPy(data *DataForSend) (*DataFromParser, error) {
-	ctxPY, cancelPY := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctxPY, cancelPY := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancelPY()
 
 	req, err := http.NewRequestWithContext(

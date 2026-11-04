@@ -16,6 +16,7 @@ var (
 	userStates         = make(map[int64]map[string]string)
 	stateMessage       = make(map[int64]int)
 	bloсkOrderKeyboard = make(map[int64]string)
+	transcribeSlots    = make(chan struct{}, 5)
 	us_db              *db.PostgresUs
 	err_db             *db.PostgresErrors
 	uSM                sync.RWMutex
@@ -271,7 +272,62 @@ func ValidRoot(bot *tgbotapi.BotAPI, userID, chatID int64, login string) bool {
 
 // спасатель
 func runSafely(bot *tgbotapi.BotAPI, chatID int64, name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in %s: %v", name, r)
+			sendErrorMessage(bot, chatID, "Что-то пошло не так, попробуйте снова", "")
+		}
+	}()
+
+	log.Printf("%s started now", name)
+	fn()
+}
+
+// спасатель с лимитом единомоментно выполняющихся
+func runSafelyLimited(
+	bot *tgbotapi.BotAPI,
+	chatID int64,
+	name string,
+	slots chan struct{},
+	fn func(),
+) {
+	waiting := false
+	var globalMsgID int
+
+	select {
+	case slots <- struct{}{}:
+		log.Printf(
+			"%s started immediately; active=%d/%d; free=%d",
+			name, len(slots), cap(slots), cap(slots)-len(slots),
+		)
+	default:
+		waiting = true
+		log.Printf("%s queued", name)
+		msg := tgbotapi.NewMessage(chatID, "Файл принят в очередь. Обработка начнётся, когда освободится место.")
+		msgID, err := bot.Send(msg)
+		if err != nil {
+			log.Printf("error when send message: %v", err)
+			sendErrorMessage(bot, chatID, "Internal service error15: повторите попытку позже", "menu")
+			return
+		}
+		globalMsgID = msgID.MessageID
+	}
+
 	go func() {
+		if waiting {
+			slots <- struct{}{}
+			delBot := tgbotapi.NewDeleteMessage(chatID, globalMsgID)
+			_, err := bot.Request(delBot)
+			if err != nil {
+				log.Printf("error when del message: %v", err)
+			}
+			log.Printf(
+				"%s started immediately; active=%d/%d; free=%d",
+				name, len(slots), cap(slots), cap(slots)-len(slots),
+			)
+		}
+
+		defer func() { <-slots }()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("panic in %s: %v", name, r)
@@ -329,7 +385,7 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 					return
 				}
 				setBloсkOrderKeyboard(chatID, "unlock")
-				runSafely(bot, chatID, "transcride", func() {
+				runSafelyLimited(bot, chatID, "transcride", transcribeSlots, func() {
 					handlerTranscrib(bot, userID, chatID, message)
 				})
 				return
