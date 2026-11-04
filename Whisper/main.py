@@ -18,7 +18,7 @@ CONFIG = {
         "compute_type": str,
         "num_workers": int,
     },
-    "concurent": {
+    "concurrent": {
         "max_concurrent": int
     },
 }
@@ -46,9 +46,15 @@ def config_loader():
     CONFIG["whisper"]["device"] = device
     CONFIG["whisper"]["compute_type"] = compute_type
     CONFIG["whisper"]["num_workers"] = int(num_workers)
-    CONFIG["concurent"]["max_concurrent"] = int(max_concurrent)
+    CONFIG["concurrent"]["max_concurrent"] = int(max_concurrent)
 
-    logger.info(f"Configuration loaded: {CONFIG}")
+    logger.info(
+        f"Configuration loaded: model={CONFIG['whisper']['model_size']}, "
+        f"device={CONFIG['whisper']['device']}, "
+        f"compute_type={CONFIG['whisper']['compute_type']}, "
+        f"num_workers={CONFIG['whisper']['num_workers']}, " 
+        f"max_concurrent={CONFIG['concurrent']['max_concurrent']}"
+    )
     
 
 
