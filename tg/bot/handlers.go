@@ -114,7 +114,6 @@ func AcceptHandler(bot *tgbotapi.BotAPI, userID, chatID int64) {
 		sendSuccessMessage(bot, chatID, "Вы уже приняли пользовательское соглашение", "menu", 0)
 		return
 	}
-
 }
 
 func ChekSub(bot *tgbotapi.BotAPI, userID, chatID int64) {
@@ -722,7 +721,7 @@ func handlerDounloadVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string,
 		ctx, "GET", telegramFile.Link(conf.BOT_TOKEN), nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error when get link on file:%v", err)
+		return nil, fmt.Errorf("error when create req:%v", err)
 	}
 
 	downloadResp, err := http.DefaultClient.Do(downloadReq)
