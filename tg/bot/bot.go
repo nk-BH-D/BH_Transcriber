@@ -16,7 +16,7 @@ var (
 	userStates         = make(map[int64]map[string]string)
 	stateMessage       = make(map[int64]int)
 	bloсkOrderKeyboard = make(map[int64]string)
-	transcribeSlots    = make(chan struct{}, conf.WHISPER_MAX_CONCURRENT)
+	transcribeSlots    chan struct{}
 	us_db              *db.PostgresUs
 	err_db             *db.PostgresErrors
 	uSM                sync.RWMutex
@@ -80,6 +80,7 @@ func deleteBloсkOrderKeyboard(chatID int64) {
 
 func Init(cfg *config.Config, pg_us *db.PostgresUs, pg_err *db.PostgresErrors) {
 	conf = cfg
+	transcribeSlots = make(chan struct{}, cfg.WHISPER_MAX_CONCURRENT)
 	us_db = pg_us
 	err_db = pg_err
 }
