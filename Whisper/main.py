@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
         compute_type=CONFIG["whisper"]["compute_type"],
         num_workers=CONFIG["whisper"]["num_workers"],
     )
-    app.state.transcribe_semaphore = asyncio.Semaphore(CONFIG["concurent"]["max_concurrent"])
+    app.state.transcribe_semaphore = asyncio.Semaphore(CONFIG["concurrent"]["max_concurrent"])
 
     try:
         yield

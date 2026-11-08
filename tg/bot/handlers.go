@@ -502,12 +502,18 @@ type DataFromParser struct {
 func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbotapi.Message) {
 	text := "Обрабатываем, пожалуйтса подождите."
 	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyParameters = &tgbotapi.ReplyParameters{MessageID: message.MessageID}
+
+	// флаги который показывают были ли ошибки при отправке сообщений или стикера
+	var (
+		flMsg  bool = true
+		flStic bool = true
+	)
 	// отправляем сообщение о начале работ
 	sendMsg, sendErr := bot.Send(msg)
 	if sendErr != nil {
 		log.Printf("error sending message: %s, %v", text, sendErr)
-		sendErrorMessage(bot, chatID, "Ошибка со стороны Telegram: уже решаем", "menu")
-		return
+		flMsg = false
 	}
 
 	// отправляем стикер
@@ -515,13 +521,7 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 	sendStic, sendErrStic := bot.Send(stic)
 	if sendErrStic != nil {
 		log.Printf("error sending stiker: %v", sendErrStic)
-		// удаляем сообщение о начале работ
-		delMsg := tgbotapi.NewDeleteMessage(chatID, sendMsg.MessageID)
-		_, errDel := bot.Request(delMsg)
-		if errDel != nil {
-			log.Printf("error when deleting message: %v", errDel)
-		}
-		return
+		flStic = false
 	}
 
 	var fileID, fileName string
@@ -539,7 +539,12 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			log.Printf("error in assistent voice and audio: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
 		}
-		delMessageAndSticer(bot, msgID, sticID, chatID)
+		if flMsg {
+			delMessage(bot, msgID, chatID)
+		}
+		if flStic {
+			delSticer(bot, sticID, chatID)
+		}
 		return
 	case message.VideoNote != nil:
 		fileID = message.VideoNote.FileID
@@ -551,7 +556,12 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			log.Printf("error in assistent videonote and video: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
 		}
-		delMessageAndSticer(bot, msgID, sticID, chatID)
+		if flMsg {
+			delMessage(bot, msgID, chatID)
+		}
+		if flStic {
+			delSticer(bot, sticID, chatID)
+		}
 		return
 	case message.Audio != nil:
 		fileID = message.Audio.FileID
@@ -566,7 +576,12 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			log.Printf("error in assistent voice and audio: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error10: повторите попытку позже", "menu")
 		}
-		delMessageAndSticer(bot, msgID, sticID, chatID)
+		if flMsg {
+			delMessage(bot, msgID, chatID)
+		}
+		if flStic {
+			delSticer(bot, sticID, chatID)
+		}
 		return
 	case message.Video != nil:
 		fileID = message.Video.FileID
@@ -581,23 +596,36 @@ func handlerTranscrib(bot *tgbotapi.BotAPI, userID, chatID int64, message *tgbot
 			log.Printf("error in assistent videonote and video: %v", err)
 			sendErrorMessage(bot, chatID, "Internal service error11: повторите попытку позже", "menu")
 		}
-		delMessageAndSticer(bot, msgID, sticID, chatID)
+		if flMsg {
+			delMessage(bot, msgID, chatID)
+		}
+		if flStic {
+			delSticer(bot, sticID, chatID)
+		}
 		return
 	default:
 		log.Printf("wrong file type")
 		sendErrorMessage(bot, chatID, "Wrong file type", "menu")
-		delMessageAndSticer(bot, msgID, sticID, chatID)
+		if flMsg {
+			delMessage(bot, msgID, chatID)
+		}
+		if flStic {
+			delSticer(bot, sticID, chatID)
+		}
 		return
 	}
 }
 
-func delMessageAndSticer(bot *tgbotapi.BotAPI, msgID int, sticID int, chatID int64) {
+func delMessage(bot *tgbotapi.BotAPI, msgID int, chatID int64) {
 	// удаляем сообщение о начале работ
 	delMsg := tgbotapi.NewDeleteMessage(chatID, msgID)
 	_, errDel := bot.Request(delMsg)
 	if errDel != nil {
 		log.Printf("error when deleting message: %v", errDel)
 	}
+}
+
+func delSticer(bot *tgbotapi.BotAPI, sticID int, chatID int64) {
 	// удаляем стикер
 	delStic := tgbotapi.NewDeleteMessage(chatID, sticID)
 	_, errDelStic := bot.Request(delStic)
@@ -616,7 +644,7 @@ func assistentVoiceAndAudio(bot *tgbotapi.BotAPI, fileID, fileName string, userI
 	}
 	errAs := headAssistent(dFS, bot, userID, chatID, messageID)
 	if errAs != nil {
-		return fmt.Errorf("error in headAssistent: %w", err)
+		return fmt.Errorf("error in headAssistent: %w", errAs)
 	}
 	return nil
 }

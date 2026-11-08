@@ -138,9 +138,6 @@ func assistedSendSuccessMessage(bot *tgbotapi.BotAPI, chatID int64, message_list
 			case "ord":
 				msg.ReplyMarkup = createOrderKeybord()
 				fl = true
-				msg.ReplyParameters = &tgbotapi.ReplyParameters{
-					MessageID: msgID,
-				}
 			case "menu":
 				msg.ReplyMarkup = createMenuKeybord()
 			case "command":
@@ -289,6 +286,7 @@ func runSafelyLimited(
 	chatID int64,
 	name string,
 	slots chan struct{},
+	msgID int,
 	fn func(),
 ) {
 	waiting := false
@@ -304,11 +302,10 @@ func runSafelyLimited(
 		waiting = true
 		log.Printf("%s queued", name)
 		msg := tgbotapi.NewMessage(chatID, "Файл принят в очередь. Обработка начнётся, когда освободится место.")
+		msg.ReplyParameters = &tgbotapi.ReplyParameters{MessageID: msgID}
 		msgID, err := bot.Send(msg)
 		if err != nil {
 			log.Printf("error when send message: %v", err)
-			sendErrorMessage(bot, chatID, "Internal service error15: повторите попытку позже", "menu")
-			return
 		}
 		globalMsgID = msgID.MessageID
 	}
@@ -327,7 +324,12 @@ func runSafelyLimited(
 			)
 		}
 
-		defer func() { <-slots }()
+		defer func() {
+			<-slots
+			log.Printf("%s reade: active=%d/%d; free=%d",
+				name, len(slots), cap(slots), cap(slots)-len(slots),
+			)
+		}()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("panic in %s: %v", name, r)
@@ -385,7 +387,7 @@ func HandleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 					return
 				}
 				setBloсkOrderKeyboard(chatID, "unlock")
-				runSafelyLimited(bot, chatID, "transcride", transcribeSlots, func() {
+				runSafelyLimited(bot, chatID, "transcride", transcribeSlots, message.MessageID, func() {
 					handlerTranscrib(bot, userID, chatID, message)
 				})
 				return
